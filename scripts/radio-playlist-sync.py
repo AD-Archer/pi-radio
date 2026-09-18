@@ -12,6 +12,10 @@
    same one all day. Newly-added Navidrome tracks are appended into
    whichever one is currently playing.
 
+A deliberate pause (from Iris, the webapp, anywhere) is left alone rather
+than treated as "not playing" - except if it's been paused for 15+ minutes
+straight, in which case it auto-resumes rather than sitting silent all day.
+
 Runs periodically (see radio-playlist-sync.timer).
 
 Also self-heals two kinds of Bluetooth trouble:
@@ -32,6 +36,7 @@ playlist ID, found in its URL) and RADIO_BLUETOOTH_MAC (your paired dongle's
 address, from `bluetoothctl devices`) are specific to each install.
 """
 import json
+import os
 import subprocess
 import sys
 import time
@@ -58,6 +63,8 @@ from radio_common import (  # noqa: E402
 )
 
 STUCK_STATE_FILE = "/var/lib/mopidy/.radio-sync-last.json"
+PAUSE_STATE_FILE = "/var/lib/mopidy/.radio-paused-since.json"
+PAUSE_AUTO_RESUME_SECONDS = 15 * 60
 UNSET = object()  # sentinel: distinguishes "no schedule state file yet" from "no schedule active"
 
 
@@ -87,6 +94,59 @@ def save_stuck_state(state):
             json.dump(state, f)
     except OSError:
         pass
+
+
+def load_pause_state():
+    try:
+        with open(PAUSE_STATE_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def save_pause_state(paused_since):
+    try:
+        with open(PAUSE_STATE_FILE, "w") as f:
+            json.dump({"paused_since": paused_since}, f)
+    except OSError:
+        pass
+
+
+def clear_pause_state():
+    try:
+        os.remove(PAUSE_STATE_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def handle_pause(state):
+    """A deliberate pause (via Iris, this webapp, anywhere) should actually
+    hold - the override/schedule/default logic below only resumes a
+    genuinely stopped/crashed player, so a plain pause is left alone here
+    rather than looking like "not playing" to it. But a pause is easy to
+    forget about, so if it's been paused for 15+ minutes straight, resume
+    on its own rather than sitting silent all day. Returns True if the
+    caller should stop processing this run (paused, whether or not we just
+    auto-resumed it)."""
+    if state != "paused":
+        clear_pause_state()
+        return False
+
+    recorded = load_pause_state()
+    now = time.time()
+    if recorded is None:
+        save_pause_state(now)
+        print("Playback paused - will auto-resume after 15 min if left alone.")
+        return True
+
+    elapsed = now - recorded["paused_since"]
+    if elapsed < PAUSE_AUTO_RESUME_SECONDS:
+        return True
+
+    rpc("core.playback.resume")
+    clear_pause_state()
+    print(f"Paused for {int(elapsed / 60)} min, auto-resuming.")
+    return True
 
 
 def ensure_playing(playlist_id_if_empty):
@@ -151,6 +211,9 @@ def main():
     ):
         recover_stuck_playback()
     save_stuck_state({"uri": track.get("uri"), "position": position})
+
+    if handle_pause(state):
+        return
 
     override = load_override()
     if override is not None:

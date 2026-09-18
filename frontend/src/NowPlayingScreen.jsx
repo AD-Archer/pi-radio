@@ -1,7 +1,7 @@
 import { api } from './api'
 import { useToast } from './ToastContext'
 import { useStatus } from './StatusContext'
-import { IconClose, IconSkip } from './Icons'
+import { IconClose } from './Icons'
 import './NowPlaying.css'
 
 function modeLine(status) {
@@ -22,16 +22,6 @@ function modeLine(status) {
 export default function NowPlayingScreen() {
   const { status, queue, refresh } = useStatus()
   const toast = useToast()
-
-  async function skip() {
-    try {
-      await api.skip()
-      toast('Skipped')
-      refresh()
-    } catch (e) {
-      toast(`Couldn't skip: ${e.message}`, 'error')
-    }
-  }
 
   async function cancelOverride() {
     try {
@@ -64,9 +54,6 @@ export default function NowPlayingScreen() {
     <div className="onair">
       <div className="onair-header">
         <span className="onair-badge">{playing ? 'playing' : 'paused'}</span>
-        <button className="btn-icon" onClick={skip} title="Skip to next track" aria-label="Skip">
-          <IconSkip />
-        </button>
       </div>
 
       <h1 className="onair-title">{track ? track.name : 'Nothing playing'}</h1>

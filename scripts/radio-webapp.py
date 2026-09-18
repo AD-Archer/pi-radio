@@ -64,6 +64,17 @@ def handle_error(e):
     return jsonify({"error": str(e)}), 500
 
 
+@app.after_request
+def add_cors_headers(response):
+    # Permissive by design: this is a control API for a personal LAN
+    # device with no auth, meant to be callable from other pages/tools on
+    # the same network (e.g. a separate dashboard doing skip/pause).
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+
 # --- Playlists ---------------------------------------------------------------
 
 @app.route("/api/playlists")
@@ -198,8 +209,19 @@ def api_queue_remove(tlid):
 
 @app.route("/api/skip", methods=["POST"])
 def api_skip():
-    with radio_lock():
-        rpc("core.playback.next")
+    rpc("core.playback.next")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/pause", methods=["POST"])
+def api_pause():
+    rpc("core.playback.pause")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/resume", methods=["POST"])
+def api_resume():
+    rpc("core.playback.resume")
     return jsonify({"ok": True})
 
 

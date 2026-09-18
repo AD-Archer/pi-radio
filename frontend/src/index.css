@@ -21,7 +21,8 @@
 html,
 body {
   margin: 0;
-  background: #000;
+  height: 100%;
+  background: #cfd2d6;
 }
 
 body {
@@ -30,16 +31,21 @@ body {
   line-height: 1.45;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  /* A quiet backdrop so the device doesn't float in a stark void on wide
+     desktop screens, without turning this into a horizontal layout. */
+  background: radial-gradient(ellipse at 50% 0%, #e4e6e9, #b9bcc1 85%);
 }
 
 #root {
-  max-width: 420px;
+  width: 440px;
+  max-width: 100vw;
+  height: 100vh;
   margin: 0 auto;
-  min-height: 100vh;
   background: var(--screen);
-  box-shadow: 0 0 0 1px #000, 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15), 0 24px 60px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 h1,

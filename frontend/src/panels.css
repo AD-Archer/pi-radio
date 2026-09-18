@@ -59,7 +59,39 @@
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 0.4rem 0 2rem;
+  padding: 0.4rem 0 1.2rem;
+}
+
+/* --- Transport bar (fixed bottom) ----------------------------------------- */
+
+.transport-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.4rem;
+  padding: 0.7rem;
+  background: #e3e4e6;
+  border-top: 1px solid var(--line);
+}
+
+.transport-btn {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.transport-btn-primary {
+  background: linear-gradient(180deg, var(--select-start), var(--select-end));
+  border-color: var(--select-end);
+  color: #fff;
 }
 
 /* --- Main menu ------------------------------------------------------------ */
@@ -81,6 +113,9 @@
   border-bottom: 1px solid var(--line);
   padding: 0.85rem 1rem;
   text-align: left;
+  color: inherit;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .menu-row:active {

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ToastProvider } from './ToastContext'
-import { StatusProvider, useStatus } from './StatusContext'
-import TitleBar from './TitleBar'
+import { StatusProvider } from './StatusContext'
+import Layout from './Layout'
 import MainMenu from './MainMenu'
 import NowPlayingScreen from './NowPlayingScreen'
 import PlaySection from './PlaySection'
@@ -11,42 +11,23 @@ import Schedule from './Schedule'
 import ManagePlaylists from './ManagePlaylists'
 import './panels.css'
 
-const TITLES = {
-  nowplaying: 'Now Playing',
-  playlists: 'Playlists',
-  songs: 'Songs',
-  favorites: 'Favorites',
-  schedule: 'Schedule',
-  rotation: 'Rotation',
-}
-
-function Screen({ view }) {
-  if (view === 'nowplaying') return <NowPlayingScreen />
-  if (view === 'playlists') return <PlaySection />
-  if (view === 'songs') return <SongSection />
-  if (view === 'favorites') return <Favorites />
-  if (view === 'schedule') return <Schedule />
-  if (view === 'rotation') return <ManagePlaylists />
-  return null
-}
-
-function Shell() {
-  const [view, setView] = useState(null)
-  const { status } = useStatus()
-
-  return (
-    <>
-      <TitleBar title={view ? TITLES[view] : 'Radio'} onBack={view ? () => setView(null) : null} live={status?.playback_state === 'playing'} />
-      <div className="content">{view ? <Screen view={view} /> : <MainMenu onSelect={setView} />}</div>
-    </>
-  )
-}
-
 export default function App() {
   return (
     <StatusProvider>
       <ToastProvider>
-        <Shell />
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<MainMenu />} />
+              <Route path="/nowplaying" element={<NowPlayingScreen />} />
+              <Route path="/playlists" element={<PlaySection />} />
+              <Route path="/songs" element={<SongSection />} />
+              <Route path="/favorites" element={<Favorites />} />
+              <Route path="/schedule" element={<Schedule />} />
+              <Route path="/rotation" element={<ManagePlaylists />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
       </ToastProvider>
     </StatusProvider>
   )

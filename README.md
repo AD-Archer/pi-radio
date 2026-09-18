@@ -79,13 +79,18 @@ after a power cycle — see "Known issues" below for why that's necessary.
 `http://<pi-ip>:5050` is a second web page — a real React app (`frontend/`),
 served by the same Flask backend as static files. It's styled after a
 classic click-wheel iPod: a menu list on the home screen, one screen deep
-per feature, a "‹ Menu" back button, and a live status dot in the title bar.
+per feature, a "‹ Menu" back button, and a live status dot in the title
+bar. Each screen is a real route (`/playlists`, `/schedule`, ...) via
+React Router, so the browser's back/forward buttons and direct links work
+normally — the Flask backend serves `index.html` for any unrecognized path
+so refreshing on a deep link doesn't 404. A pause/skip transport bar stays
+fixed at the bottom; only the middle content scrolls.
 
 Menu items:
 
 - **Now Playing** — live track/artist, whether you're on the random
-  rotation/a schedule/a timed override, a numbered cue sheet of what's
-  queued next (each with a remove button), and a skip button.
+  rotation/a schedule/a timed override, and a numbered cue sheet of what's
+  queued next (each with a remove button).
 - **Playlists** — search playlists: **Play now** clears the queue and
   plays it (through once by default; or pick a duration to loop it, up to
   "until changed") — auto-reverts to the rotation once it finishes or the
@@ -133,6 +138,28 @@ operations go through a file lock (`radio_lock()`) so the webapp and the
 sync timer can never interleave and corrupt the queue, even from rapid
 clicks. Both services need the same `RADIO_PLAYLIST_ID` set as their
 default/fallback.
+
+### Using the API from somewhere else
+
+The backend sends permissive CORS headers (`Access-Control-Allow-Origin: *`)
+specifically so another page or tool on your LAN can call it directly —
+there's no auth, by design, since it only controls a personal music box.
+The transport endpoints are the simplest entry point:
+
+```
+POST /api/pause
+POST /api/resume
+POST /api/skip
+GET  /api/status   # current track, playback_state, what mode it's in
+```
+
+The rest of `scripts/radio-webapp.py` (playlists, songs, favorites,
+schedule, exclusions, queue) is fair game too — it's just JSON over HTTP.
+
+A deliberate pause is left alone (it won't get resumed within the next
+sync tick like a genuine stop/crash would) — but if it's left paused for
+15+ minutes straight, `radio-playlist-sync.py` resumes it on its own
+rather than sitting silent all day.
 
 ## How it works
 

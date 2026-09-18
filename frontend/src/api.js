@@ -15,6 +15,8 @@ export const api = {
   status: () => request('/api/status'),
   queue: () => request('/api/queue'),
   skip: () => request('/api/skip', { method: 'POST' }),
+  pause: () => request('/api/pause', { method: 'POST' }),
+  resume: () => request('/api/resume', { method: 'POST' }),
   removeFromQueue: (tlid) => request(`/api/queue/${tlid}`, { method: 'DELETE' }),
 
   playlists: (q) => request(`/api/playlists?q=${encodeURIComponent(q)}`),
