@@ -1,0 +1,13 @@
+[Unit]
+Description=Radio playlist picker webpage
+After=mopidy.service
+Requires=mopidy.service
+
+[Service]
+Type=simple
+Environment=RADIO_PLAYLIST_ID=1OfGteB2iY40tKxcmugen9
+ExecStart=/usr/bin/python3 /usr/local/bin/radio-webapp.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -66,6 +66,29 @@ Navidrome's web UI) and `RADIO_BLUETOOTH_MAC` (from `bluetoothctl devices`
 after pairing). This same script also reconnects Bluetooth automatically
 after a power cycle — see "Known issues" below for why that's necessary.
 
+### Temporarily playing a specific playlist instead
+
+`http://<pi-ip>:5050` is a second, much smaller web page: search your
+Navidrome playlists, hit Play with a duration (15 min – 4 hr, or "until
+changed"), and it clears the queue to play *only* that playlist on loop.
+When the timer runs out, it automatically switches back to the default
+Radio playlist — or hit "back to default Radio now" to end it early.
+
+Set up alongside the sync timer:
+
+```bash
+sudo pip3 install --break-system-packages flask
+sudo cp scripts/radio_common.py scripts/radio-webapp.py /usr/local/bin/
+sudo cp scripts/radio-webapp.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now radio-webapp
+```
+
+This and `radio-playlist-sync.py` share state (`radio_common.py`, and a
+small JSON file recording the current override + its expiry) — the webpage
+sets what should play, the sync timer enforces it and reverts it on
+schedule. Both need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
+
 ## How it works
 
 - **Mopidy** — the player daemon. Holds the queue, does the actual playing,
@@ -79,6 +102,9 @@ after a power cycle — see "Known issues" below for why that's necessary.
 - **radio-playlist-sync** (timer, every 2 min) — keeps a chosen Navidrome
   playlist's tracks queued and looping, and reconnects Bluetooth if it
   dropped (e.g. after a reboot).
+- **radio-webapp** — a tiny Flask page (port 5050) to search playlists and
+  play one exclusively for a set duration, then auto-revert. Writes an
+  override file that radio-playlist-sync.py reads and enforces.
 
 ## Known issues
 
@@ -128,7 +154,10 @@ config/
   mopidy.conf                     your real credentials (gitignored, not committed)
 scripts/
   setup.sh                        installer - run on the Pi
+  radio_common.py                 shared helpers (Mopidy RPC, override state)
   radio-playlist-sync.py          looping-playlist + Bluetooth self-heal
   radio-playlist-sync.service     systemd unit for the above
   radio-playlist-sync.timer       runs it every 2 minutes
+  radio-webapp.py                 playlist-picker webpage (port 5050)
+  radio-webapp.service            systemd unit for the above
 ```
