@@ -86,6 +86,17 @@ def save_stuck_state(state):
         pass
 
 
+def ensure_playing(playlist_id_if_empty):
+    """If playback isn't running, resume it - but if the tracklist is
+    actually empty (e.g. a real Mopidy service restart wiped it, not just
+    a pause), a plain play() is a no-op, so do a full re-queue instead."""
+    with radio_lock():
+        if rpc("core.tracklist.get_length") == 0:
+            play_playlist_now(playlist_id_if_empty)
+        else:
+            rpc("core.playback.play")
+
+
 def recover_stuck_playback():
     print("Playback stuck (same track/position since last check) - reconnecting Bluetooth and restarting playback.")
     subprocess.run(["bluetoothctl", "disconnect", BLUETOOTH_MAC], capture_output=True, text=True)
@@ -145,9 +156,8 @@ def main():
     if override is not None:
         print(f"Manual override active ({override['name']!r}).")
         if state != "playing":
-            with radio_lock():
-                rpc("core.playback.play")
-            print("Playback wasn't playing, started it.")
+            ensure_playing(override["playlist_id"])
+            print("Playback wasn't playing, started/resumed it.")
         return
 
     if read_raw_override() is not None:
@@ -175,9 +185,8 @@ def main():
     if active is not None:
         print(f"Schedule {active['name']!r} still active.")
         if state != "playing":
-            with radio_lock():
-                rpc("core.playback.play")
-            print("Playback wasn't playing, started it.")
+            ensure_playing(active["playlist_id"])
+            print("Playback wasn't playing, started/resumed it.")
         return
 
     default_state = load_default_state()

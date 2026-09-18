@@ -135,6 +135,12 @@ services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
 
 ## Known issues
 
+- **The base GStreamer install can't decode AAC (.m4a) audio at all.** It
+  fails hard mid-playback (`Could not find a MPEG-4 AAC decoder`) and stops
+  outright rather than skipping the track — only surfaces once a Navidrome
+  playlist happens to contain an AAC file, which made it look like a random
+  Bluetooth issue at first. `setup.sh` now installs
+  `gstreamer1.0-plugins-bad` and `gstreamer1.0-libav` upfront.
 - **Mopidy is pinned to 3.4.2**, not the newer 4.x that some sources (like
   apt.mopidy.com) offer by default. Mopidy-Iris and Mopidy-Subsonic haven't
   caught up to Mopidy 4's internal API changes yet — under 4.x, Iris crashes
@@ -166,6 +172,13 @@ services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
   `radio-playlist-sync.py` now detects this by comparing (track, position)
   against what it saw last run; if unchanged 2 minutes later while
   "playing", it reconnects Bluetooth and restarts playback.
+- **Resuming after a real Mopidy service restart could silently no-op** —
+  the "already active, just call play() if stopped" paths assumed the
+  tracklist still had the songs queued from before, which isn't true after
+  an actual `systemctl restart mopidy` (as opposed to a pause/reboot),
+  since that wipes the in-memory tracklist. Fixed: `ensure_playing()` now
+  checks for an empty tracklist and does a full re-queue instead of a
+  no-op `play()`.
 - **Rapid double-clicking "Play" used to corrupt the queue** — Flask's dev
   server + two near-simultaneous requests could interleave a `clear()` from
   one request with an `add()` from another, leaving a mixed tracklist that

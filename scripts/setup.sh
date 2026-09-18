@@ -21,8 +21,14 @@ apt-get update -qq
 # and Mopidy-Subsonic below haven't caught up to Mopidy 4's internal API
 # changes yet and will fail to load under it.
 apt-get install -y -qq \
-  mopidy bluez bluez-alsa-utils python3-pip python3-setuptools rfkill
+  mopidy bluez bluez-alsa-utils python3-pip python3-setuptools rfkill \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav
 apt-mark hold mopidy
+# gstreamer1.0-plugins-bad/-libav: the base GStreamer install Mopidy pulls in
+# can't decode AAC (.m4a) audio at all - it fails hard mid-playback with
+# "Could not find a MPEG-4 AAC decoder" and stops, only surfacing on
+# whichever Navidrome library happens to contain an AAC file. Install these
+# upfront rather than discover it later.
 
 echo "==> Installing Mopidy extensions (Subsonic + Iris)"
 pip3 install --break-system-packages --quiet Mopidy-Subsonic Mopidy-Iris py-sonic

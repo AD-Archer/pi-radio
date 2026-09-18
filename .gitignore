@@ -6,3 +6,6 @@ config/mopidy.conf
 .DS_Store
 __pycache__/
 *.pyc
+
+# Claude Code session state, not part of the project
+.claude/
