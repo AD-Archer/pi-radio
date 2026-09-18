@@ -16,18 +16,23 @@ import time
 
 sys.path.insert(0, "/usr/local/bin")
 from radio_common import (  # noqa: E402
-    DEFAULT_PLAYLIST_ID,
     add_schedule,
     clear_override,
+    get_all_playlists,
     get_subsonic_client,
+    load_default_state,
+    load_exclusions,
     load_override,
     load_schedules,
-    play_playlist_now,
+    play_song_next,
     radio_lock,
     remove_schedule,
     resolve_active_schedule,
+    resume_or_pick_default,
     rpc,
     save_override,
+    search_tracks,
+    set_exclusion,
 )
 
 from flask import Flask, jsonify, request  # noqa: E402
@@ -175,6 +180,15 @@ PAGE = """<!doctype html>
 </div>
 
 <div class="card">
+  <h2>Play a song next</h2>
+  <div class="row search-row">
+    <input type="text" id="songQ" placeholder="Search songs..." oninput="songSearch()">
+  </div>
+  <div class="results" id="songResults"></div>
+  <div class="muted" style="margin-top: 0.4rem;">Plays once, right after the current track, then whatever was already looping just continues.</div>
+</div>
+
+<div class="card">
   <h2>Daily schedule</h2>
   <div class="row">
     <input type="time" id="scheduleTime" style="flex: 0 0 auto; width: 8rem;">
@@ -186,6 +200,12 @@ PAGE = """<!doctype html>
     <button onclick="addSchedule()">Add to schedule</button>
   </div>
   <div id="scheduleList" style="margin-top: 0.8rem;"></div>
+</div>
+
+<div class="card">
+  <h2>Manage playlists</h2>
+  <div class="muted" style="margin-bottom: 0.6rem;">Excluded playlists are never picked for the random default rotation (schedules and manual Play still work regardless).</div>
+  <div class="results" id="exclusionsList"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -248,6 +268,99 @@ function renderResults(el, playlists, onPick, label) {
     row.appendChild(btn);
     el.appendChild(row);
   });
+}
+
+let songSearchTimer = null;
+function songSearch() {
+  clearTimeout(songSearchTimer);
+  songSearchTimer = setTimeout(doSongSearch, 400);
+}
+
+async function doSongSearch() {
+  const q = document.getElementById('songQ').value.trim();
+  const el = document.getElementById('songResults');
+  if (!q) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="empty">Searching (can take a few seconds)...</div>';
+  try {
+    const tracks = await api('/api/songs?q=' + encodeURIComponent(q));
+    el.innerHTML = '';
+    if (tracks.length === 0) {
+      el.innerHTML = '<div class="empty">No songs found.</div>';
+      return;
+    }
+    tracks.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'result-row';
+      row.innerHTML = `<span class="name">${t.name} <span class="muted">${t.artist}</span></span>`;
+      const btn = document.createElement('button');
+      btn.textContent = 'Play next';
+      btn.onclick = () => playSongNext(t.uri, t.name, btn);
+      row.appendChild(btn);
+      el.appendChild(row);
+    });
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Search failed: ${e.message}</div>`;
+  }
+}
+
+async function playSongNext(uri, name, btn) {
+  btn.disabled = true;
+  try {
+    await api('/api/play-song', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({uri: uri})
+    });
+    toast(`"${name}" will play next`, 'ok');
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    refreshStatus();
+  }
+}
+
+async function loadExclusions() {
+  const el = document.getElementById('exclusionsList');
+  try {
+    const playlists = await api('/api/exclusions');
+    el.innerHTML = '';
+    playlists.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'result-row';
+      const label = document.createElement('label');
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '0.5rem';
+      label.style.cursor = 'pointer';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !p.excluded;
+      cb.onchange = () => toggleExclusion(p.id, !cb.checked);
+      label.appendChild(cb);
+      const span = document.createElement('span');
+      span.className = 'name';
+      span.innerHTML = `${p.name} <span class="muted">(${p.songCount} songs)</span>`;
+      label.appendChild(span);
+      row.appendChild(label);
+      el.appendChild(row);
+    });
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Couldn't load playlists: ${e.message}</div>`;
+  }
+}
+
+async function toggleExclusion(id, excluded) {
+  try {
+    await api('/api/exclusions/' + id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({excluded: excluded})
+    });
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+    loadExclusions();
+  }
 }
 
 function selectForSchedule(id, name) {
@@ -358,6 +471,8 @@ async function refreshStatus() {
         + `<a href="#" onclick="cancelOverride(); return false;">back to default now</a>`;
     } else if (s.active_schedule) {
       line = `Following daily schedule: "${s.active_schedule.name}" (since ${s.active_schedule.time})`;
+    } else if (s.default_state) {
+      line = `Looping "${s.default_state.name}" (today's random pick)`;
     } else {
       line = 'Looping the default playlist';
     }
@@ -369,6 +484,7 @@ async function refreshStatus() {
 
 search();
 loadSchedules();
+loadExclusions();
 refreshStatus();
 setInterval(refreshStatus, 4000);
 </script>
@@ -415,8 +531,51 @@ def api_play():
 def api_cancel():
     with radio_lock():
         clear_override()
-        count = play_playlist_now(DEFAULT_PLAYLIST_ID)
-    return jsonify({"queued": count})
+        playlist_id, name, count = resume_or_pick_default()
+    return jsonify({"queued": count, "playlist_id": playlist_id, "name": name})
+
+
+@app.route("/api/songs")
+def api_songs():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+    tracks = search_tracks(q)
+    return jsonify([
+        {
+            "uri": t["uri"],
+            "name": t["name"],
+            "artist": ", ".join(a["name"] for a in t.get("artists", [])),
+        }
+        for t in tracks
+    ])
+
+
+@app.route("/api/play-song", methods=["POST"])
+def api_play_song():
+    body = request.get_json(force=True)
+    with radio_lock():
+        ok = play_song_next(body["uri"])
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/exclusions")
+def api_exclusions_list():
+    client = get_subsonic_client()
+    excluded = set(load_exclusions())
+    playlists = get_all_playlists(client)
+    playlists.sort(key=lambda p: p.get("name", "").lower())
+    return jsonify([
+        {"id": p["id"], "name": p["name"], "songCount": p.get("songCount", 0), "excluded": p["id"] in excluded}
+        for p in playlists
+    ])
+
+
+@app.route("/api/exclusions/<playlist_id>", methods=["PUT"])
+def api_exclusions_set(playlist_id):
+    body = request.get_json(force=True)
+    set_exclusion(playlist_id, bool(body.get("excluded")))
+    return jsonify({"ok": True})
 
 
 @app.route("/api/schedules", methods=["GET"])
@@ -445,13 +604,17 @@ def api_status():
     if override is not None and override.get("expires_at") is not None:
         seconds_left = max(0, override["expires_at"] - time.time())
     active_schedule = None
+    default_state = None
     if override is None:
         active_schedule = resolve_active_schedule(load_schedules())
+        if active_schedule is None:
+            default_state = load_default_state()
     current_track = rpc("core.playback.get_current_track")
     return jsonify({
         "override": override,
         "seconds_left": seconds_left,
         "active_schedule": active_schedule,
+        "default_state": default_state,
         "current_track": current_track,
     })
 

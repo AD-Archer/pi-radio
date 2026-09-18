@@ -5,8 +5,10 @@
    still active - left completely alone until it expires.
 2. A recurring daily schedule entry (also set via radio-webapp.py) whose
    time-of-day has arrived - switched to automatically, every day, forever.
-3. Otherwise, the default playlist (RADIO_PLAYLIST_ID) looped forever,
-   with newly-added Navidrome tracks appended in automatically.
+3. Otherwise, a randomly-picked playlist (excluding anything marked
+   excluded in radio-webapp.py), looped forever, with newly-added Navidrome
+   tracks appended in automatically. The random pick is made once on
+   entering this mode and stays stable - it doesn't reshuffle every run.
 
 Runs periodically (see radio-playlist-sync.timer).
 
@@ -35,9 +37,10 @@ import time
 sys.path.insert(0, "/usr/local/bin")
 from radio_common import (  # noqa: E402
     BLUETOOTH_MAC,
-    DEFAULT_PLAYLIST_ID,
     clear_override,
     get_subsonic_client,
+    load_default_state,
+    load_exclusions,
     load_override,
     load_schedule_state,
     load_schedules,
@@ -46,6 +49,7 @@ from radio_common import (  # noqa: E402
     radio_lock,
     read_raw_override,
     resolve_active_schedule,
+    resume_or_pick_default,
     rpc,
     save_schedule_state,
 )
@@ -94,22 +98,22 @@ def recover_stuck_playback():
         rpc("core.playback.play")
 
 
-def sync_default_playlist():
-    """Steady-state behaviour: append any new tracks from the default
+def sync_playlist(playlist_id, label):
+    """Steady-state behaviour: append any new tracks from the given
     playlist without disturbing the current queue position."""
     with radio_lock():
         client = get_subsonic_client()
-        uris = playlist_track_uris(client, DEFAULT_PLAYLIST_ID)
+        uris = playlist_track_uris(client, playlist_id)
 
         if not uris:
-            print("Default playlist has no songs yet, nothing to queue.")
+            print(f"{label} has no songs, nothing to queue.")
         else:
             current = rpc("core.tracklist.get_tracks") or []
             current_uris = {t["uri"] for t in current}
             new_uris = [u for u in uris if u not in current_uris]
             if new_uris:
                 rpc("core.tracklist.add", {"uris": new_uris})
-                print(f"Added {len(new_uris)} new track(s) from default playlist.")
+                print(f"Added {len(new_uris)} new track(s) from {label}.")
             else:
                 print("No new tracks.")
 
@@ -157,13 +161,14 @@ def main():
     stored_id = schedule_state["active_schedule_id"] if schedule_state is not None else UNSET
 
     if active_id != stored_id:
-        with radio_lock():
-            if active is not None:
-                print(f"Schedule change: switching to {active['name']!r} ({active['time']}).")
+        if active is not None:
+            print(f"Schedule change: switching to {active['name']!r} ({active['time']}).")
+            with radio_lock():
                 play_playlist_now(active["playlist_id"])
-            else:
-                print("Schedule change: no schedule active, switching to default playlist.")
-                play_playlist_now(DEFAULT_PLAYLIST_ID)
+        else:
+            with radio_lock():
+                _, name, _ = resume_or_pick_default()
+            print(f"Schedule change: no schedule active, back to default ({name!r}).")
         save_schedule_state(active_id)
         return
 
@@ -175,7 +180,14 @@ def main():
             print("Playback wasn't playing, started it.")
         return
 
-    sync_default_playlist()
+    default_state = load_default_state()
+    if default_state is None or default_state["playlist_id"] in load_exclusions():
+        with radio_lock():
+            _, name, _ = resume_or_pick_default()
+        print(f"Default playlist no longer eligible, switched to {name!r}.")
+        return
+
+    sync_playlist(default_state["playlist_id"], f"default playlist {default_state['name']!r}")
 
 
 if __name__ == "__main__":

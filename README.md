@@ -11,9 +11,12 @@ Navidrome  --(Subsonic API, WiFi)-->  Raspberry Pi 4  --(Bluetooth A2DP)-->  USB
 ```
 
 Runs as a headless appliance: plug it in, it joins the network, connects to
-Navidrome and the Bluetooth dongle on its own, and keeps a playlist looping
-forever — add songs to that playlist from anywhere and they join the loop
-automatically, no restart needed.
+Navidrome and the Bluetooth dongle on its own, and keeps *something* playing
+forever. By default that's a randomly-picked Navidrome playlist (looped,
+picking up newly-added songs automatically) — layer on top of that: a daily
+recurring schedule, one-off timed overrides, playing a single song next
+without disturbing the loop, and excluding specific playlists from random
+rotation. All from a web page on your LAN.
 
 ## Hardware
 
@@ -50,8 +53,12 @@ Open `http://<pi-ip>:6680` for the web UI (Mopidy-Iris). Search your
 Navidrome library or pick a playlist, and it plays over Bluetooth to your FM
 dongle.
 
-For "just keep a playlist looping forever, add songs whenever" behavior
-instead of manually queuing things each time, set up the sync timer:
+For "just keep something looping forever, add songs whenever" behavior
+instead of manually queuing things each time, set up the sync timer. By
+default it randomly picks one Navidrome playlist and loops it (stable until
+something else takes over, not reshuffling every run) — `RADIO_PLAYLIST_ID`
+below is only the fallback used if literally nothing is eligible (e.g.
+every playlist got excluded):
 
 ```bash
 sudo cp scripts/radio-playlist-sync.py /usr/local/bin/
@@ -66,21 +73,27 @@ Navidrome's web UI) and `RADIO_BLUETOOTH_MAC` (from `bluetoothctl devices`
 after pairing). This same script also reconnects Bluetooth automatically
 after a power cycle — see "Known issues" below for why that's necessary.
 
-### Picking a playlist yourself, or scheduling one daily
+### Picking playlists/songs yourself, scheduling, and exclusions
 
-`http://<pi-ip>:5050` is a second, smaller web page with three parts:
+`http://<pi-ip>:5050` is a second, smaller web page with five parts:
 
-- **Now playing** — live track/artist, and whether you're on the default
-  playlist, a schedule, or a timed override.
+- **Now playing** — live track/artist, and whether you're on the random
+  default, a schedule, or a timed override.
 - **Play a playlist** — search, pick a duration (15 min – 4 hr, or "until
   changed"), hit Play. Clears the queue to play *only* that playlist on
-  loop; auto-reverts to the default playlist when the timer runs out (or
+  loop; auto-reverts to the previous default when the timer runs out (or
   hit "back to default now" to end it early).
+- **Play a song next** — search individual tracks; picking one inserts it
+  right after whatever's currently playing and jumps to it. Whatever was
+  already looping (default/schedule/override) just continues on its own
+  once that one song ends — nothing else needs to change.
 - **Daily schedule** — pick a time + playlist, hit "Add to schedule". Every
   day at that time, forever, it switches to that playlist automatically —
   like a recurring radio programming grid. A one-off "Play" always takes
   priority over the schedule until its timer expires, then the schedule
   resumes.
+- **Manage playlists** — uncheck a playlist to exclude it from random
+  default rotation (it can still be played manually or scheduled).
 
 Set up alongside the sync timer:
 
@@ -110,13 +123,15 @@ services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
   any browser on the LAN.
 - **BlueALSA** — routes Mopidy's audio output to a paired Bluetooth device
   instead of a speaker jack.
-- **radio-playlist-sync** (timer, every 2 min) — keeps a chosen Navidrome
-  playlist's tracks queued and looping, and reconnects Bluetooth if it
-  dropped (e.g. after a reboot).
-- **radio-webapp** — a tiny Flask page (port 5050) to search playlists,
-  play one exclusively for a set duration (auto-reverting after), or pin
-  one to a recurring daily time slot. Writes state files that
-  radio-playlist-sync.py reads and enforces.
+- **radio-playlist-sync** (timer, every 2 min) — enforces whatever should
+  currently be playing (random default / schedule / override), keeps its
+  tracks queued and looping, and reconnects Bluetooth if it dropped (e.g.
+  after a reboot).
+- **radio-webapp** — a tiny Flask page (port 5050): search playlists or
+  songs, play a playlist for a set duration (auto-reverting after) or a
+  song next (auto-continuing after), pin a playlist to a recurring daily
+  time slot, and exclude playlists from random rotation. Writes state files
+  that radio-playlist-sync.py reads and enforces.
 
 ## Known issues
 
