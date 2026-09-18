@@ -107,6 +107,12 @@ after a power cycle — see "Known issues" below for why that's necessary.
   `radio-playlist-sync.timer` covers this by checking and reconnecting every
   2 minutes, so recovery after a power cycle takes up to ~2 minutes rather
   than being instant.
+- **Playback can silently stall mid-track** — Mopidy keeps reporting
+  `"playing"` with no error logged, but the position just stops advancing
+  forever (seen once, cause suspected to be a Bluetooth link hiccup).
+  `radio-playlist-sync.py` now detects this by comparing (track, position)
+  against what it saw last run; if unchanged 2 minutes later while
+  "playing", it reconnects Bluetooth and restarts playback.
 
 See [PROJECT.md](PROJECT.md) for the fuller build log, architecture
 rationale, and what's still on the roadmap (an Icecast/DLNA phase for
