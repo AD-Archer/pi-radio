@@ -1,10 +1,10 @@
 [Unit]
-Description=Run radio-playlist-sync every 2 minutes
+Description=Run radio-playlist-sync every 15 seconds
 
 [Timer]
-OnBootSec=30s
-OnUnitActiveSec=2min
-AccuracySec=10s
+OnBootSec=15s
+OnUnitActiveSec=15s
+AccuracySec=2s
 
 [Install]
 WantedBy=timers.target

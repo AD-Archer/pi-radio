@@ -56,7 +56,7 @@ so DLNA-aware devices can find and play it directly over WiFi.
 | Mopidy-Subsonic | lets Mopidy read Navidrome's library | **done, but hand-patched** — see "Known issues" below |
 | Mopidy-Iris | web UI (the "LAN website") | **done** — works, but see browsing limitation below |
 | BlueALSA | routes audio to the paired Bluetooth dongle (FM02, `41:42:BD:42:27:E5`) | **done**, confirmed playing audio over Bluetooth |
-| radio-playlist-sync (timer, every 2 min) | keeps a chosen Navidrome playlist looping forever, picks up newly-added songs, self-heals Bluetooth after reboot | **done**, replaces the originally-planned MPD-based autoplay (dropped, see "Open decisions") |
+| radio-playlist-sync (timer, every 15s - was every 2 min, too slow to rotate/reconnect) | keeps a chosen Navidrome playlist looping forever, picks up newly-added songs, self-heals Bluetooth after reboot | **done**, replaces the originally-planned MPD-based autoplay (dropped, see "Open decisions") |
 | Icecast (Phase 2) | plain HTTP stream URL, playable by anything | not started |
 | DLNA discovery, e.g. MiniDLNA/BubbleUPnP (Phase 3) | makes the Icecast stream browsable/discoverable by DLNA devices | not started, lower reliability, optional |
 

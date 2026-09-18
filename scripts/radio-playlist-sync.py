@@ -16,7 +16,10 @@ A deliberate pause (from Iris, the webapp, anywhere) is left alone rather
 than treated as "not playing" - except if it's been paused for 15+ minutes
 straight, in which case it auto-resumes rather than sitting silent all day.
 
-Runs periodically (see radio-playlist-sync.timer).
+Runs every 15 seconds (see radio-playlist-sync.timer) - each run is cheap
+(a handful of lightweight Mopidy RPC calls, ~1s wall time), so this is safe
+to run this often; it used to run every 2 minutes, which meant up to 2
+minutes of silence after a playlist finished before rotating to the next.
 
 Also self-heals two kinds of Bluetooth trouble:
 1. After a reboot/power cycle, BlueZ powers the adapter back on but does NOT
@@ -26,7 +29,7 @@ Also self-heals two kinds of Bluetooth trouble:
 2. Occasionally the Bluetooth audio link stalls mid-track: Mopidy reports
    "playing" and never errors, but the playback position simply stops
    advancing forever. Each run compares (track, position) against what was
-   seen last run (2 minutes earlier via the timer); if both are identical
+   seen last run (15 seconds earlier via the timer); if both are identical
    while "playing", that's not a coincidence, it's stuck - reconnect
    Bluetooth and restart playback.
 

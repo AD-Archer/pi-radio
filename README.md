@@ -180,7 +180,7 @@ rather than sitting silent all day.
   any browser on the LAN.
 - **BlueALSA** — routes Mopidy's audio output to a paired Bluetooth device
   instead of a speaker jack.
-- **radio-playlist-sync** (timer, every 2 min) — enforces whatever should
+- **radio-playlist-sync** (timer, every 15s) — enforces whatever should
   currently be playing (random default / schedule / override), keeps its
   tracks queued and looping, and reconnects Bluetooth if it dropped (e.g.
   after a reboot).
@@ -194,6 +194,21 @@ rather than sitting silent all day.
 
 ## Known issues
 
+- **Up to 2 minutes of silence after a playlist finished** — the sync
+  timer only ran every 2 minutes, so rotating to a new playlist (or
+  reconnecting Bluetooth, or catching stuck playback) waited on that same
+  slow cadence. Each run is cheap (~1s, a handful of lightweight RPC
+  calls), so there was no real reason for it to be that slow — reduced to
+  every 15 seconds.
+- **The random rotation can feel like it's "stuck" on one playlist** — it
+  picks uniformly among playlists, not weighted by track count, so a much
+  longer playlist (e.g. a 74-track "Radio" vs. others in the 20-40 range)
+  naturally occupies a disproportionate share of listening time once
+  picked, even though the rotation itself is genuinely random (confirmed
+  via the sync log: different playlists each time). Not a bug, but if a
+  particular playlist dominates more than you'd like, exclude it from
+  rotation on the Rotation screen — it'll still be playable manually or
+  via schedule.
 - **Toasts were positioned relative to the browser viewport, not the
   device frame** — on a wide desktop screen they'd appear centered on the
   whole page instead of the (narrower, centered) device column, and could
@@ -252,13 +267,13 @@ rather than sitting silent all day.
   that initiates the connection to the dongle, and BlueZ doesn't redo that
   on its own after a power cycle — only the adapter itself powers back on.
   `radio-playlist-sync.timer` covers this by checking and reconnecting every
-  2 minutes, so recovery after a power cycle takes up to ~2 minutes rather
-  than being instant.
+  15 seconds, so recovery after a power cycle takes up to ~15 seconds
+  rather than being instant.
 - **Playback can silently stall mid-track** — Mopidy keeps reporting
   `"playing"` with no error logged, but the position just stops advancing
   forever (seen once, cause suspected to be a Bluetooth link hiccup).
   `radio-playlist-sync.py` now detects this by comparing (track, position)
-  against what it saw last run; if unchanged 2 minutes later while
+  against what it saw last run; if unchanged 15 seconds later while
   "playing", it reconnects Bluetooth and restarts playback.
 - **Resuming after a real Mopidy service restart could silently no-op** —
   the "already active, just call play() if stopped" paths assumed the
@@ -297,7 +312,7 @@ scripts/
   radio_common.py                 shared helpers (Mopidy RPC, override/schedule state)
   radio-playlist-sync.py          rotation/schedule/override enforcement + Bluetooth self-heal
   radio-playlist-sync.service     systemd unit for the above
-  radio-playlist-sync.timer       runs it every 2 minutes
+  radio-playlist-sync.timer       runs it every 15 seconds
   radio-webapp.py                 JSON API backend + static file server (port 5050)
   radio-webapp.service            systemd unit for the above
 frontend/                         React app (Vite) - the actual web UI
