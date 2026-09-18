@@ -95,15 +95,20 @@ def playlist_track_uris(client, playlist_id):
     return [f"subsonic://{e['id']}" for e in entries]
 
 
-def play_playlist_now(playlist_id):
-    """Clear the queue, load only this playlist's tracks, loop, and play.
+def play_playlist_now(playlist_id, repeat=True):
+    """Clear the queue, load only this playlist's tracks, and play.
+    repeat=True loops this exact playlist forever (used for schedules and
+    manual "play X" overrides - a deliberate pick that should keep playing).
+    repeat=False plays it through once and stops at the end (used for the
+    random default rotation, so the sync loop can notice it finished and
+    switch to a different random playlist).
     Caller is responsible for holding radio_lock() around this."""
     client = get_subsonic_client()
     uris = playlist_track_uris(client, playlist_id)
     rpc("core.tracklist.clear")
     if uris:
         rpc("core.tracklist.add", {"uris": uris})
-    rpc("core.tracklist.set_repeat", {"value": True})
+    rpc("core.tracklist.set_repeat", {"value": repeat})
     rpc("core.tracklist.set_consume", {"value": False})
     if uris:
         rpc("core.playback.play")
@@ -239,10 +244,14 @@ def set_exclusion(playlist_id, excluded):
     _atomic_write_json(EXCLUSIONS_FILE, sorted(ids))
 
 
-def pick_random_playlist(client):
-    """Random eligible playlist (excluded ones and empty ones don't count),
-    or None if nothing qualifies."""
+def pick_random_playlist(client, exclude_id=None):
+    """Random eligible playlist (excluded ones and empty ones don't count;
+    exclude_id additionally excludes one specific playlist, e.g. whatever
+    just finished playing, so rotation doesn't repeat the same one twice in
+    a row), or None if nothing qualifies."""
     excluded = set(load_exclusions())
+    if exclude_id:
+        excluded = excluded | {exclude_id}
     candidates = [
         p for p in get_all_playlists(client)
         if p["id"] not in excluded and p.get("songCount", 0) > 0
@@ -264,17 +273,37 @@ def save_default_state(playlist_id, name):
 def resume_or_pick_default():
     """Resume the persisted default playlist if it's still eligible (not
     excluded), otherwise pick a fresh random one (or the fallback, if
-    nothing qualifies). Switches the queue and starts playback. Returns
-    (playlist_id, name, tracks_queued). Caller must hold radio_lock()."""
+    nothing qualifies). Switches the queue and starts playback, without
+    looping - once it plays through, advance_to_new_default() should pick a
+    different one next. Returns (playlist_id, name, tracks_queued). Caller
+    must hold radio_lock()."""
     state = load_default_state()
     excluded = set(load_exclusions())
     if state is not None and state["playlist_id"] not in excluded:
-        count = play_playlist_now(state["playlist_id"])
+        count = play_playlist_now(state["playlist_id"], repeat=False)
         return state["playlist_id"], state["name"], count
     client = get_subsonic_client()
     chosen = pick_random_playlist(client) or {"id": FALLBACK_PLAYLIST_ID, "name": "fallback"}
     save_default_state(chosen["id"], chosen["name"])
-    count = play_playlist_now(chosen["id"])
+    count = play_playlist_now(chosen["id"], repeat=False)
+    return chosen["id"], chosen["name"], count
+
+
+def advance_to_new_default():
+    """Called when the current default playlist has played all the way
+    through (repeat is off in default mode). Picks a different random
+    playlist than the one that just finished and switches to it. Returns
+    (playlist_id, name, tracks_queued). Caller must hold radio_lock()."""
+    current = load_default_state()
+    current_id = current["playlist_id"] if current else None
+    client = get_subsonic_client()
+    chosen = (
+        pick_random_playlist(client, exclude_id=current_id)
+        or pick_random_playlist(client)  # only one eligible playlist total - replay it
+        or {"id": FALLBACK_PLAYLIST_ID, "name": "fallback"}
+    )
+    save_default_state(chosen["id"], chosen["name"])
+    count = play_playlist_now(chosen["id"], repeat=False)
     return chosen["id"], chosen["name"], count
 
 

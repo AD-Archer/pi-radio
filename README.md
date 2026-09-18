@@ -12,11 +12,12 @@ Navidrome  --(Subsonic API, WiFi)-->  Raspberry Pi 4  --(Bluetooth A2DP)-->  USB
 
 Runs as a headless appliance: plug it in, it joins the network, connects to
 Navidrome and the Bluetooth dongle on its own, and keeps *something* playing
-forever. By default that's a randomly-picked Navidrome playlist (looped,
-picking up newly-added songs automatically) — layer on top of that: a daily
+forever. By default that's a rotation through random Navidrome playlists —
+plays one all the way through (picking up newly-added songs automatically),
+then a *different* random one, and so on — layer on top of that: a daily
 recurring schedule, one-off timed overrides, playing a single song next
-without disturbing the loop, and excluding specific playlists from random
-rotation. All from a web page on your LAN.
+without disturbing the rotation, and excluding specific playlists from it.
+All from a web page on your LAN.
 
 ## Hardware
 

@@ -6,9 +6,11 @@
 2. A recurring daily schedule entry (also set via radio-webapp.py) whose
    time-of-day has arrived - switched to automatically, every day, forever.
 3. Otherwise, a randomly-picked playlist (excluding anything marked
-   excluded in radio-webapp.py), looped forever, with newly-added Navidrome
-   tracks appended in automatically. The random pick is made once on
-   entering this mode and stays stable - it doesn't reshuffle every run.
+   excluded in radio-webapp.py), played through once (not looped) - when it
+   finishes, a *different* random playlist is picked automatically, so the
+   ambient default keeps rotating through variety rather than looping the
+   same one all day. Newly-added Navidrome tracks are appended into
+   whichever one is currently playing.
 
 Runs periodically (see radio-playlist-sync.timer).
 
@@ -37,6 +39,7 @@ import time
 sys.path.insert(0, "/usr/local/bin")
 from radio_common import (  # noqa: E402
     BLUETOOTH_MAC,
+    advance_to_new_default,
     clear_override,
     get_subsonic_client,
     load_default_state,
@@ -110,30 +113,27 @@ def recover_stuck_playback():
 
 
 def sync_playlist(playlist_id, label):
-    """Steady-state behaviour: append any new tracks from the given
-    playlist without disturbing the current queue position."""
+    """Steady-state behaviour while the default playlist is still playing:
+    append any new tracks from it without disturbing the current queue
+    position. Does NOT touch playback state - the caller has already
+    confirmed it's still playing; when it finishes, advance_to_new_default()
+    handles moving on, not this."""
     with radio_lock():
         client = get_subsonic_client()
         uris = playlist_track_uris(client, playlist_id)
 
         if not uris:
             print(f"{label} has no songs, nothing to queue.")
+            return
+
+        current = rpc("core.tracklist.get_tracks") or []
+        current_uris = {t["uri"] for t in current}
+        new_uris = [u for u in uris if u not in current_uris]
+        if new_uris:
+            rpc("core.tracklist.add", {"uris": new_uris})
+            print(f"Added {len(new_uris)} new track(s) from {label}.")
         else:
-            current = rpc("core.tracklist.get_tracks") or []
-            current_uris = {t["uri"] for t in current}
-            new_uris = [u for u in uris if u not in current_uris]
-            if new_uris:
-                rpc("core.tracklist.add", {"uris": new_uris})
-                print(f"Added {len(new_uris)} new track(s) from {label}.")
-            else:
-                print("No new tracks.")
-
-        rpc("core.tracklist.set_repeat", {"value": True})
-        rpc("core.tracklist.set_consume", {"value": False})
-
-        if uris and rpc("core.playback.get_state") != "playing":
-            rpc("core.playback.play")
-            print("Playback was stopped, started it.")
+            print("No new tracks.")
 
 
 def main():
@@ -194,6 +194,12 @@ def main():
         with radio_lock():
             _, name, _ = resume_or_pick_default()
         print(f"Default playlist no longer eligible, switched to {name!r}.")
+        return
+
+    if state != "playing":
+        with radio_lock():
+            _, name, _ = advance_to_new_default()
+        print(f"{default_state['name']!r} finished, moved on to {name!r}.")
         return
 
     sync_playlist(default_state["playlist_id"], f"default playlist {default_state['name']!r}")
