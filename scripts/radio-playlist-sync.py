@@ -154,11 +154,18 @@ def main():
 
     override = load_override()
     if override is not None:
-        print(f"Manual override active ({override['name']!r}).")
-        if state != "playing":
-            ensure_playing(override["playlist_id"])
-            print("Playback wasn't playing, started/resumed it.")
-        return
+        if override.get("once") and state != "playing":
+            # Played through once, as requested (no looping) - done, hand
+            # control back to whatever schedule/rotation applies below,
+            # rather than treating this as "stuck" and resuming a rerun.
+            print(f"{override['name']!r} finished playing through, ending the one-off.")
+            clear_override()
+        else:
+            print(f"Manual override active ({override['name']!r}).")
+            if state != "playing":
+                ensure_playing(override["playlist_id"])
+                print("Playback wasn't playing, started/resumed it.")
+            return
 
     if read_raw_override() is not None:
         print("A manual override just expired, clearing it.")

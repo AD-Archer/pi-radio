@@ -149,9 +149,15 @@ def load_override():
     return state
 
 
-def save_override(playlist_id, name, minutes):
+def save_override(playlist_id, name, minutes, once=False):
+    """once=True: play the playlist through one time (no looping) and end
+    the override as soon as it naturally finishes - the default, since
+    looping for a fixed duration can otherwise cut a track off mid-song
+    the moment the timer hits. minutes (loop for N minutes) and "until
+    changed" (minutes=None, loop forever) remain available as explicit
+    choices when you actually want a timed/indefinite loop."""
     expires_at = time.time() + minutes * 60 if minutes else None
-    state = {"playlist_id": playlist_id, "name": name, "expires_at": expires_at}
+    state = {"playlist_id": playlist_id, "name": name, "expires_at": expires_at, "once": once}
     _atomic_write_json(OVERRIDE_STATE_FILE, state)
     return state
 
@@ -322,9 +328,10 @@ def search_tracks(query, limit=25):
 
 def play_song_next(track_uri):
     """Insert a single track right after whatever's currently playing and
-    jump to it. Once it ends, the untouched surrounding queue (whatever
-    playlist/schedule/default was already looping) just continues on its
-    own - no extra state needed to "go back" to it."""
+    jump to it immediately (interrupts what's playing now). Once it ends,
+    the untouched surrounding queue (whatever playlist/schedule/default was
+    already looping) just continues on its own - no extra state needed to
+    "go back" to it."""
     index = rpc("core.tracklist.index")
     at_position = (index + 1) if index is not None else 0
     added = rpc("core.tracklist.add", {"uris": [track_uri], "at_position": at_position})
@@ -332,3 +339,65 @@ def play_song_next(track_uri):
         return False
     rpc("core.playback.play", {"tlid": added[0]["tlid"]})
     return True
+
+
+def queue_song_next(track_uri):
+    """Insert a single track right after the current one WITHOUT jumping -
+    it plays once the current track finishes on its own, nothing else is
+    interrupted."""
+    index = rpc("core.tracklist.index")
+    at_position = (index + 1) if index is not None else 0
+    added = rpc("core.tracklist.add", {"uris": [track_uri], "at_position": at_position})
+    return bool(added)
+
+
+def get_favorite_tracks(limit=200):
+    """Navidrome-starred ("favorited") songs, via the Subsonic getStarred2
+    call - a flat list, not tied to any playlist."""
+    client = get_subsonic_client()
+    data = client.api.getStarred2()
+    songs = data.get("starred2", {}).get("song", [])
+    if isinstance(songs, dict):
+        songs = [songs]
+    return songs[:limit]
+
+
+def queue_playlist_next(playlist_id):
+    """Insert this playlist's tracks right after whatever's currently
+    playing, WITHOUT clearing or jumping - they just play in order once
+    playback reaches them, and whatever was already queued after the
+    current track (if anything) still follows after them. Doesn't touch
+    override/schedule/default state at all."""
+    client = get_subsonic_client()
+    uris = playlist_track_uris(client, playlist_id)
+    if not uris:
+        return 0
+    index = rpc("core.tracklist.index")
+    at_position = (index + 1) if index is not None else 0
+    rpc("core.tracklist.add", {"uris": uris, "at_position": at_position})
+    return len(uris)
+
+
+def get_queue():
+    """Currently playing track (if any) plus everything queued after it,
+    for display. Each item has tlid so the UI can request a removal."""
+    tl_tracks = rpc("core.tracklist.get_tl_tracks") or []
+    current_tlid = None
+    current_track = rpc("core.playback.get_current_track")
+    if current_track is not None:
+        index = rpc("core.tracklist.index")
+        if index is not None and 0 <= index < len(tl_tracks):
+            current_tlid = tl_tracks[index]["tlid"]
+    upcoming = []
+    seen_current = current_tlid is None
+    for tl in tl_tracks:
+        if tl["tlid"] == current_tlid:
+            seen_current = True
+            continue
+        if seen_current:
+            upcoming.append(tl)
+    return current_tlid, upcoming
+
+
+def remove_from_queue(tlid):
+    rpc("core.tracklist.remove", {"criteria": {"tlid": [tlid]}})

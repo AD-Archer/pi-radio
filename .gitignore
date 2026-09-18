@@ -9,3 +9,8 @@ __pycache__/
 
 # Claude Code session state, not part of the project
 .claude/
+
+# Frontend build artifacts and dependencies - built with `pnpm build` in
+# frontend/, then deployed to the Pi separately (see README.md)
+frontend/node_modules/
+frontend/dist/

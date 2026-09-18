@@ -76,43 +76,63 @@ after a power cycle — see "Known issues" below for why that's necessary.
 
 ### Picking playlists/songs yourself, scheduling, and exclusions
 
-`http://<pi-ip>:5050` is a second, smaller web page with five parts:
+`http://<pi-ip>:5050` is a second web page — a real React app (`frontend/`),
+served by the same Flask backend as static files. It's styled after a
+classic click-wheel iPod: a menu list on the home screen, one screen deep
+per feature, a "‹ Menu" back button, and a live status dot in the title bar.
 
-- **Now playing** — live track/artist, and whether you're on the random
-  default, a schedule, or a timed override.
-- **Play a playlist** — search, pick a duration (15 min – 4 hr, or "until
-  changed"), hit Play. Clears the queue to play *only* that playlist on
-  loop; auto-reverts to the previous default when the timer runs out (or
-  hit "back to default now" to end it early).
-- **Play a song next** — search individual tracks; picking one inserts it
-  right after whatever's currently playing and jumps to it. Whatever was
-  already looping (default/schedule/override) just continues on its own
-  once that one song ends — nothing else needs to change.
-- **Daily schedule** — pick a time + playlist, hit "Add to schedule". Every
-  day at that time, forever, it switches to that playlist automatically —
-  like a recurring radio programming grid. A one-off "Play" always takes
-  priority over the schedule until its timer expires, then the schedule
-  resumes.
-- **Manage playlists** — uncheck a playlist to exclude it from random
-  default rotation (it can still be played manually or scheduled).
+Menu items:
 
-Set up alongside the sync timer:
+- **Now Playing** — live track/artist, whether you're on the random
+  rotation/a schedule/a timed override, a numbered cue sheet of what's
+  queued next (each with a remove button), and a skip button.
+- **Playlists** — search playlists: **Play now** clears the queue and
+  plays it (through once by default; or pick a duration to loop it, up to
+  "until changed") — auto-reverts to the rotation once it finishes or the
+  timer runs out. **Queue next** inserts the whole playlist right after the
+  current track *without* clearing or disturbing anything else queued.
+- **Songs** — search individual tracks. **Play now** jumps to it
+  immediately (interrupting what's playing); **Queue next** inserts it
+  after the current track without interrupting anything.
+- **Favorites** — your Navidrome-starred songs, with the same Play
+  now/Queue next actions as Songs.
+- **Schedule** — pick a time + playlist, add it. Every day at that time,
+  forever, it switches to that playlist automatically — a recurring
+  programming grid. A one-off "Play now" always takes priority over the
+  schedule until it ends, then the schedule resumes.
+- **Rotation** — uncheck a playlist to exclude it from random rotation (it
+  still works for search-and-play or scheduling).
+
+Build the frontend and deploy alongside the sync timer:
 
 ```bash
+cd frontend && pnpm install && pnpm build && cd ..
+
 sudo pip3 install --break-system-packages flask
 sudo cp scripts/radio_common.py scripts/radio-webapp.py /usr/local/bin/
 sudo cp scripts/radio-webapp.service /etc/systemd/system/
+sudo mkdir -p /usr/local/share/radio-frontend
+sudo cp -r frontend/dist /usr/local/share/radio-frontend/dist
 sudo systemctl daemon-reload
 sudo systemctl enable --now radio-webapp
 ```
 
-This and `radio-playlist-sync.py` share state via `radio_common.py` (small
-JSON files for the current override and the schedule list) — the webpage
-decides what should play, the sync timer enforces and reverts/switches it
-on schedule. All tracklist-mutating operations go through a file lock
-(`radio_lock()`) so the webapp and the sync timer can never interleave and
-corrupt the queue, even if you click Play multiple times quickly. Both
-services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
+(All of this runs from your dev machine, then gets `scp`'d to the Pi like
+everything else in `scripts/` — see `RADIO_FRONTEND_DIST` in
+`radio-webapp.service` if you deploy the built files somewhere else.)
+
+For frontend development, `cd frontend && pnpm dev` runs a local dev
+server that proxies `/api/*` to the real Pi (see `vite.config.js`), so you
+can iterate against live data without deploying anything.
+
+The backend (`radio-webapp.py`) and `radio-playlist-sync.py` share state
+via `radio_common.py` (small JSON files for the current override and the
+schedule list) — the webapp decides what should play, the sync timer
+enforces and reverts/switches it on schedule. All tracklist-mutating
+operations go through a file lock (`radio_lock()`) so the webapp and the
+sync timer can never interleave and corrupt the queue, even from rapid
+clicks. Both services need the same `RADIO_PLAYLIST_ID` set as their
+default/fallback.
 
 ## How it works
 
@@ -128,14 +148,23 @@ services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
   currently be playing (random default / schedule / override), keeps its
   tracks queued and looping, and reconnects Bluetooth if it dropped (e.g.
   after a reboot).
-- **radio-webapp** — a tiny Flask page (port 5050): search playlists or
-  songs, play a playlist for a set duration (auto-reverting after) or a
-  song next (auto-continuing after), pin a playlist to a recurring daily
-  time slot, and exclude playlists from random rotation. Writes state files
-  that radio-playlist-sync.py reads and enforces.
+- **radio-webapp + frontend/** — a Flask JSON API (port 5050) serving a
+  React app (styled after a click-wheel iPod menu): search playlists,
+  songs, or favorites; play one now (once through, or looped for a
+  duration) or queue it next without disturbing anything else; pin a
+  playlist to a recurring daily time slot; exclude playlists from random
+  rotation; see the live cue sheet and skip/remove tracks. Writes state
+  files that radio-playlist-sync.py reads and enforces.
 
 ## Known issues
 
+- **"Play now" defaulted to looping for a fixed duration (1 hour), which
+  could cut a track off mid-song the instant the timer hit** — confusing,
+  since the natural expectation for "play this playlist" is that it plays
+  through, not that it gets truncated on a clock. `/api/play` now defaults
+  to `once=true` (play through one time, no looping, ends on its own);
+  looping for a set duration or indefinitely ("until changed") remains
+  available as an explicit choice.
 - **The base GStreamer install can't decode AAC (.m4a) audio at all.** It
   fails hard mid-playback (`Could not find a MPEG-4 AAC decoder`) and stops
   outright rather than skipping the track — only surfaces once a Navidrome
@@ -180,6 +209,12 @@ services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
   since that wipes the in-memory tracklist. Fixed: `ensure_playing()` now
   checks for an empty tracklist and does a full re-queue instead of a
   no-op `play()`.
+- **`/api/play` silently 500'd** — an earlier refactor's import-list edit
+  accidentally dropped `play_playlist_now` while the route still called it
+  directly, only caught while rebuilding the backend for the React
+  frontend. Fixed by re-adding the import; worth noting since it shipped
+  unnoticed for a while (the surrounding `/api/cancel` path used a
+  different helper and kept working).
 - **Rapid double-clicking "Play" used to corrupt the queue** — Flask's dev
   server + two near-simultaneous requests could interleave a `clear()` from
   one request with an `add()` from another, leaving a mixed tracklist that
@@ -201,10 +236,13 @@ config/
   mopidy.conf                     your real credentials (gitignored, not committed)
 scripts/
   setup.sh                        installer - run on the Pi
-  radio_common.py                 shared helpers (Mopidy RPC, override state)
-  radio-playlist-sync.py          looping-playlist + Bluetooth self-heal
+  radio_common.py                 shared helpers (Mopidy RPC, override/schedule state)
+  radio-playlist-sync.py          rotation/schedule/override enforcement + Bluetooth self-heal
   radio-playlist-sync.service     systemd unit for the above
   radio-playlist-sync.timer       runs it every 2 minutes
-  radio-webapp.py                 playlist-picker webpage (port 5050)
+  radio-webapp.py                 JSON API backend + static file server (port 5050)
   radio-webapp.service            systemd unit for the above
+frontend/                         React app (Vite) - the actual web UI
+  src/                            components, API client, styles
+  dist/                           `pnpm build` output (gitignored, deployed separately)
 ```
