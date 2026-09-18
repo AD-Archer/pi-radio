@@ -15,10 +15,18 @@ export const api = {
   status: () => request('/api/status'),
   queue: () => request('/api/queue'),
   skip: () => request('/api/skip', { method: 'POST' }),
+  previous: () => request('/api/previous', { method: 'POST' }),
   pause: () => request('/api/pause', { method: 'POST' }),
   resume: () => request('/api/resume', { method: 'POST' }),
   removeFromQueue: (tlid) => request(`/api/queue/${tlid}`, { method: 'DELETE' }),
   playFromQueue: (tlid) => request(`/api/queue/${tlid}/play`, { method: 'POST' }),
+  moveInQueue: (tlid, direction) => request(`/api/queue/${tlid}/move`, json({ direction })),
+  setStarred: (uri, starred) =>
+    request(`/api/favorites/${uri}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ starred }),
+    }),
 
   playlists: (q) => request(`/api/playlists?q=${encodeURIComponent(q)}`),
   playPlaylist: (playlistId, name, { once, minutes } = {}) =>

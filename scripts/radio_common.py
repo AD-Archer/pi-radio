@@ -390,19 +390,22 @@ def _current_tlid():
 
 
 def get_queue():
-    """Currently playing track (if any) plus everything queued after it,
-    for display. Each item has tlid so the UI can request a removal or
-    jump straight to it."""
+    """Currently playing track (if any), everything already played before
+    it (history, oldest first) and everything queued after it (upcoming),
+    for display. Each item has tlid so the UI can jump straight to it or
+    (for upcoming) request a removal. Nothing is ever actually deleted
+    from the tracklist just for having already played (consume is always
+    false), so history is genuinely browsable/replayable, same as Iris."""
     current_tlid, tl_tracks = _current_tlid()
+    history = []
     upcoming = []
     seen_current = current_tlid is None
     for tl in tl_tracks:
         if tl["tlid"] == current_tlid:
             seen_current = True
             continue
-        if seen_current:
-            upcoming.append(tl)
-    return current_tlid, upcoming
+        (upcoming if seen_current else history).append(tl)
+    return current_tlid, history, upcoming
 
 
 def remove_from_queue(tlid):
@@ -420,3 +423,48 @@ def remove_from_queue(tlid):
 def play_tlid(tlid):
     """Jump directly to a specific queued track."""
     rpc("core.playback.play", {"tlid": tlid})
+
+
+def move_in_queue(tlid, direction):
+    """Move a queued (upcoming, not history/current) track one slot up or
+    down. Returns False if there's nowhere to move to (already at the
+    front of the upcoming section, or at the very end)."""
+    current_tlid, tl_tracks = _current_tlid()
+    current_idx = next((i for i, tl in enumerate(tl_tracks) if tl["tlid"] == current_tlid), -1)
+    idx = next((i for i, tl in enumerate(tl_tracks) if tl["tlid"] == tlid), None)
+    if idx is None:
+        return False
+
+    target = idx - 1 if direction == "up" else idx + 1
+    if target <= current_idx or target >= len(tl_tracks):
+        return False
+
+    rpc("core.tracklist.move", {"start": idx, "end": idx + 1, "to_position": target})
+    return True
+
+
+def play_previous():
+    rpc("core.playback.previous")
+
+
+# --- Starring (favoriting) songs in Navidrome --------------------------------
+
+def _bare_song_id(uri):
+    """Accepts either a 'subsonic://<id>' Mopidy URI or a bare Navidrome id."""
+    prefix = "subsonic://"
+    return uri[len(prefix):] if uri.startswith(prefix) else uri
+
+
+def star_track(uri):
+    client = get_subsonic_client()
+    client.api.star(sids=[_bare_song_id(uri)])
+
+
+def unstar_track(uri):
+    client = get_subsonic_client()
+    client.api.unstar(sids=[_bare_song_id(uri)])
+
+
+def is_track_starred(uri):
+    bare_id = _bare_song_id(uri)
+    return any(t["id"] == bare_id for t in get_favorite_tracks(limit=10000))

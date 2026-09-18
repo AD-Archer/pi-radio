@@ -29,13 +29,16 @@ from radio_common import (  # noqa: E402
     get_favorite_tracks,
     get_queue,
     get_subsonic_client,
-    play_tlid,
+    is_track_starred,
     load_default_state,
+    move_in_queue,
     load_exclusions,
     load_override,
     load_schedules,
     play_playlist_now,
+    play_previous,
     play_song_next,
+    play_tlid,
     queue_playlist_next,
     queue_song_next,
     radio_lock,
@@ -47,6 +50,8 @@ from radio_common import (  # noqa: E402
     save_override,
     search_tracks,
     set_exclusion,
+    star_track,
+    unstar_track,
 )
 
 from flask import Flask, jsonify, request, send_from_directory  # noqa: E402
@@ -182,22 +187,34 @@ def api_favorites():
     ])
 
 
-# --- Live queue (current + upcoming) -----------------------------------------
+@app.route("/api/favorites/<path:uri>", methods=["PUT"])
+def api_favorites_set(uri):
+    body = request.get_json(force=True)
+    if body.get("starred"):
+        star_track(uri)
+    else:
+        unstar_track(uri)
+    return jsonify({"ok": True})
+
+
+def _serialize_tl(tl):
+    return {
+        "tlid": tl["tlid"],
+        "uri": tl["track"]["uri"],
+        "name": tl["track"].get("name", "?"),
+        "artist": ", ".join(a["name"] for a in tl["track"].get("artists", [])),
+    }
+
+
+# --- Live queue (history + current + upcoming) -------------------------------
 
 @app.route("/api/queue")
 def api_queue():
-    current_tlid, upcoming = get_queue()
+    current_tlid, history, upcoming = get_queue()
     return jsonify({
         "current_tlid": current_tlid,
-        "upcoming": [
-            {
-                "tlid": tl["tlid"],
-                "uri": tl["track"]["uri"],
-                "name": tl["track"].get("name", "?"),
-                "artist": ", ".join(a["name"] for a in tl["track"].get("artists", [])),
-            }
-            for tl in upcoming
-        ],
+        "history": [_serialize_tl(tl) for tl in history],
+        "upcoming": [_serialize_tl(tl) for tl in upcoming],
     })
 
 
@@ -214,9 +231,23 @@ def api_queue_play(tlid):
     return jsonify({"ok": True})
 
 
+@app.route("/api/queue/<int:tlid>/move", methods=["POST"])
+def api_queue_move(tlid):
+    body = request.get_json(force=True)
+    with radio_lock():
+        moved = move_in_queue(tlid, body["direction"])
+    return jsonify({"ok": moved})
+
+
 @app.route("/api/skip", methods=["POST"])
 def api_skip():
     rpc("core.playback.next")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/previous", methods=["POST"])
+def api_previous():
+    play_previous()
     return jsonify({"ok": True})
 
 
@@ -290,12 +321,14 @@ def api_status():
             default_state = load_default_state()
     current_track = rpc("core.playback.get_current_track")
     playback_state = rpc("core.playback.get_state")
+    current_track_starred = is_track_starred(current_track["uri"]) if current_track else None
     return jsonify({
         "override": override,
         "seconds_left": seconds_left,
         "active_schedule": active_schedule,
         "default_state": default_state,
         "current_track": current_track,
+        "current_track_starred": current_track_starred,
         "playback_state": playback_state,
     })
 

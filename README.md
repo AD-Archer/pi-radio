@@ -83,15 +83,23 @@ per feature, a "‹ Menu" back button, and a live status dot in the title
 bar. Each screen is a real route (`/playlists`, `/schedule`, ...) via
 React Router, so the browser's back/forward buttons and direct links work
 normally — the Flask backend serves `index.html` for any unrecognized path
-so refreshing on a deep link doesn't 404. A pause/skip transport bar stays
-fixed at the bottom; only the middle content scrolls.
+so refreshing on a deep link doesn't 404. A previous/pause-or-play/skip
+transport bar stays fixed at the bottom; only the middle content scrolls.
 
 Menu items:
 
-- **Now Playing** — live track/artist, whether you're on the random
-  rotation/a schedule/a timed override, and the full numbered cue sheet of
-  what's queued next — click a row to skip straight to that track, or its
-  remove button to drop it from the queue.
+- **Now Playing** — the current track sits in its own highlighted card
+  (with a star button to favorite/unfavorite it in Navidrome on the spot)
+  so it's visually unmistakable next to the plain "Recently played"/"Up
+  next" lists above and below it. The screen opens scrolled so the card is
+  at the top — history is reachable by scrolling up, upcoming by scrolling
+  down. Also shows whether you're on the random rotation/a schedule/a
+  timed override. Nothing is ever actually deleted from the tracklist just
+  for having played (same idea as Iris showing history in its queue), so
+  history is genuinely there to browse — click any row, past or future, to
+  jump straight to it, or use the up/down arrows on an upcoming track to
+  reorder the queue. The transport bar's previous button steps back
+  normally too.
 - **Playlists** — search playlists: **Play now** clears the queue and
   plays it (through once by default; or pick a duration to loop it, up to
   "until changed") — auto-reverts to the rotation once it finishes or the
@@ -186,6 +194,16 @@ rather than sitting silent all day.
 
 ## Known issues
 
+- **Toasts were positioned relative to the browser viewport, not the
+  device frame** — on a wide desktop screen they'd appear centered on the
+  whole page instead of the (narrower, centered) device column, and could
+  sit behind/under the fixed transport bar. Fixed: `.toast-stack` is now
+  `position: absolute` inside `#root` (which is `position: relative`), and
+  offset by `--transport-bar-height` so it always clears the bar.
+- **The Now Playing screen had no visual separation between what already
+  played and what's currently playing** — everything was one flat list.
+  Fixed: the current track now sits in its own bordered/tinted card, with
+  plain "Recently played"/"Up next" list labels above and below it.
 - **Removing the currently-playing track from the queue could break
   playback** — a real race: the UI's queue view can be a few seconds stale
   (polled every 4s), so a row that was "coming up" when fetched can become

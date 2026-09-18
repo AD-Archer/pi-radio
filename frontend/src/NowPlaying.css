@@ -2,11 +2,16 @@
   padding: 1.2rem 1rem 0.5rem;
 }
 
+.onair .section-title {
+  margin-left: 0;
+  margin-right: 0;
+}
+
 .onair-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.2rem;
+  margin-bottom: 0.5rem;
 }
 
 .onair-badge {
@@ -15,28 +20,42 @@
   text-transform: lowercase;
 }
 
+.nowplaying-card {
+  background: #eaf3ff;
+  border: 1px solid #bcdcff;
+  border-radius: 12px;
+  padding: 1rem 1.1rem 1.1rem;
+  margin: 0.9rem 0;
+}
+
+.star-btn {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.star-btn:active {
+  color: #d9a600;
+}
+
 .onair-title {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  text-align: center;
 }
 
 .onair-artist {
   color: var(--muted);
   font-size: 0.95rem;
-  text-align: center;
   margin-top: 0.15rem;
 }
 
 .onair-mode {
-  margin-top: 1.1rem;
+  margin-top: 0.7rem;
   font-size: 0.85rem;
   color: var(--muted);
-  text-align: center;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.3rem;
 }
 
@@ -50,9 +69,8 @@
 
 .cuesheet {
   list-style: none;
-  margin: 1.3rem 0 0;
-  padding: 0.5rem 0 0;
-  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 0;
 }
 
 .cuesheet-row {
@@ -66,6 +84,14 @@
 
 .cuesheet-row:active {
   background: #e9eaec;
+}
+
+.cuesheet-history {
+  opacity: 0.6;
+}
+
+.cuesheet-history .cuesheet-row:last-child {
+  border-bottom: none;
 }
 
 .cuesheet-num {

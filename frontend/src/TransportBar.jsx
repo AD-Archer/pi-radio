@@ -1,7 +1,7 @@
 import { api } from './api'
 import { useStatus } from './StatusContext'
 import { useToast } from './ToastContext'
-import { IconPause, IconPlayFilled, IconSkip } from './Icons'
+import { IconPause, IconPlayFilled, IconPrevious, IconSkip } from './Icons'
 
 export default function TransportBar() {
   const { status, refresh } = useStatus()
@@ -31,8 +31,20 @@ export default function TransportBar() {
     }
   }
 
+  async function previous() {
+    try {
+      await api.previous()
+      refresh()
+    } catch (e) {
+      toast(`Couldn't go back: ${e.message}`, 'error')
+    }
+  }
+
   return (
     <div className="transport-bar">
+      <button className="transport-btn" onClick={previous} aria-label="Previous">
+        <IconPrevious />
+      </button>
       <button className="transport-btn transport-btn-primary" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
         {playing ? <IconPause /> : <IconPlayFilled />}
       </button>

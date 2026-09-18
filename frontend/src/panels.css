@@ -66,6 +66,8 @@
 
 .transport-bar {
   flex-shrink: 0;
+  height: var(--transport-bar-height);
+  box-sizing: border-box;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -256,6 +258,22 @@ select {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.cuesheet-move {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.btn-icon-tiny {
+  width: 20px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.btn-icon-tiny:active {
+  color: var(--select-end);
 }
 
 .empty,
