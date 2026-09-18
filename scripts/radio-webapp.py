@@ -29,6 +29,7 @@ from radio_common import (  # noqa: E402
     get_favorite_tracks,
     get_queue,
     get_subsonic_client,
+    play_tlid,
     load_default_state,
     load_exclusions,
     load_override,
@@ -204,6 +205,12 @@ def api_queue():
 def api_queue_remove(tlid):
     with radio_lock():
         remove_from_queue(tlid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/queue/<int:tlid>/play", methods=["POST"])
+def api_queue_play(tlid):
+    play_tlid(tlid)
     return jsonify({"ok": True})
 
 

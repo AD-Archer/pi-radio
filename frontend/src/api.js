@@ -18,6 +18,7 @@ export const api = {
   pause: () => request('/api/pause', { method: 'POST' }),
   resume: () => request('/api/resume', { method: 'POST' }),
   removeFromQueue: (tlid) => request(`/api/queue/${tlid}`, { method: 'DELETE' }),
+  playFromQueue: (tlid) => request(`/api/queue/${tlid}/play`, { method: 'POST' }),
 
   playlists: (q) => request(`/api/playlists?q=${encodeURIComponent(q)}`),
   playPlaylist: (playlistId, name, { once, minutes } = {}) =>

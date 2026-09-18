@@ -119,7 +119,7 @@ def clear_pause_state():
         pass
 
 
-def handle_pause(state):
+def handle_pause(state, track):
     """A deliberate pause (via Iris, this webapp, anywhere) should actually
     hold - the override/schedule/default logic below only resumes a
     genuinely stopped/crashed player, so a plain pause is left alone here
@@ -131,6 +131,19 @@ def handle_pause(state):
     if state != "paused":
         clear_pause_state()
         return False
+
+    if not track:
+        # "Paused" with no actual current track is a broken limbo state,
+        # not a real pause (seen once, after removing the track that was
+        # actively playing right out from under Mopidy) - recover right
+        # away instead of waiting out the grace period.
+        with radio_lock():
+            tl_tracks = rpc("core.tracklist.get_tl_tracks") or []
+            if tl_tracks:
+                rpc("core.playback.play", {"tlid": tl_tracks[0]["tlid"]})
+                print("Paused with no current track (stuck) - recovered by playing from the start of the queue.")
+        clear_pause_state()
+        return True
 
     recorded = load_pause_state()
     now = time.time()
@@ -212,7 +225,7 @@ def main():
         recover_stuck_playback()
     save_stuck_state({"uri": track.get("uri"), "position": position})
 
-    if handle_pause(state):
+    if handle_pause(state, track):
         return
 
     override = load_override()

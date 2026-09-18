@@ -378,16 +378,22 @@ def queue_playlist_next(playlist_id):
     return len(uris)
 
 
+def _current_tlid():
+    tl_tracks = rpc("core.tracklist.get_tl_tracks") or []
+    current_track = rpc("core.playback.get_current_track")
+    if current_track is None:
+        return None, tl_tracks
+    index = rpc("core.tracklist.index")
+    if index is not None and 0 <= index < len(tl_tracks):
+        return tl_tracks[index]["tlid"], tl_tracks
+    return None, tl_tracks
+
+
 def get_queue():
     """Currently playing track (if any) plus everything queued after it,
-    for display. Each item has tlid so the UI can request a removal."""
-    tl_tracks = rpc("core.tracklist.get_tl_tracks") or []
-    current_tlid = None
-    current_track = rpc("core.playback.get_current_track")
-    if current_track is not None:
-        index = rpc("core.tracklist.index")
-        if index is not None and 0 <= index < len(tl_tracks):
-            current_tlid = tl_tracks[index]["tlid"]
+    for display. Each item has tlid so the UI can request a removal or
+    jump straight to it."""
+    current_tlid, tl_tracks = _current_tlid()
     upcoming = []
     seen_current = current_tlid is None
     for tl in tl_tracks:
@@ -400,4 +406,17 @@ def get_queue():
 
 
 def remove_from_queue(tlid):
-    rpc("core.tracklist.remove", {"criteria": {"tlid": [tlid]}})
+    """Removing the track that's actually playing right now (a real race:
+    playback can advance into a row between when the UI fetched the queue
+    and when you click remove on it) would yank the active track out from
+    under Mopidy mid-play - just skip past it cleanly instead."""
+    current_tlid, _ = _current_tlid()
+    if tlid == current_tlid:
+        rpc("core.playback.next")
+    else:
+        rpc("core.tracklist.remove", {"criteria": {"tlid": [tlid]}})
+
+
+def play_tlid(tlid):
+    """Jump directly to a specific queued track."""
+    rpc("core.playback.play", {"tlid": tlid})

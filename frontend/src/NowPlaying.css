@@ -61,6 +61,11 @@
   gap: 0.6rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.cuesheet-row:active {
+  background: #e9eaec;
 }
 
 .cuesheet-num {

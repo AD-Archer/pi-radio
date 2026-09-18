@@ -89,8 +89,9 @@ fixed at the bottom; only the middle content scrolls.
 Menu items:
 
 - **Now Playing** — live track/artist, whether you're on the random
-  rotation/a schedule/a timed override, and a numbered cue sheet of what's
-  queued next (each with a remove button).
+  rotation/a schedule/a timed override, and the full numbered cue sheet of
+  what's queued next — click a row to skip straight to that track, or its
+  remove button to drop it from the queue.
 - **Playlists** — search playlists: **Play now** clears the queue and
   plays it (through once by default; or pick a duration to loop it, up to
   "until changed") — auto-reverts to the rotation once it finishes or the
@@ -185,6 +186,18 @@ rather than sitting silent all day.
 
 ## Known issues
 
+- **Removing the currently-playing track from the queue could break
+  playback** — a real race: the UI's queue view can be a few seconds stale
+  (polled every 4s), so a row that was "coming up" when fetched can become
+  the *actively playing* track by the time you click remove on it. Yanking
+  the live track out from under Mopidy left it stuck "paused" with no
+  current track at all. Fixed two ways: `remove_from_queue()` checks the
+  actual current track right before removing and skips instead if they
+  match, and `radio-playlist-sync.py` recognizes "paused with nothing
+  loaded" as a broken state and recovers immediately (rather than waiting
+  out the 15-minute pause grace period) — verified by reproducing the
+  broken state via raw Mopidy RPC and confirming the sync script fixed it
+  on the next run.
 - **"Play now" defaulted to looping for a fixed duration (1 hour), which
   could cut a track off mid-song the instant the timer hit** — confusing,
   since the natural expectation for "play this playlist" is that it plays
