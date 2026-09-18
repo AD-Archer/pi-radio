@@ -66,13 +66,21 @@ Navidrome's web UI) and `RADIO_BLUETOOTH_MAC` (from `bluetoothctl devices`
 after pairing). This same script also reconnects Bluetooth automatically
 after a power cycle — see "Known issues" below for why that's necessary.
 
-### Temporarily playing a specific playlist instead
+### Picking a playlist yourself, or scheduling one daily
 
-`http://<pi-ip>:5050` is a second, much smaller web page: search your
-Navidrome playlists, hit Play with a duration (15 min – 4 hr, or "until
-changed"), and it clears the queue to play *only* that playlist on loop.
-When the timer runs out, it automatically switches back to the default
-Radio playlist — or hit "back to default Radio now" to end it early.
+`http://<pi-ip>:5050` is a second, smaller web page with three parts:
+
+- **Now playing** — live track/artist, and whether you're on the default
+  playlist, a schedule, or a timed override.
+- **Play a playlist** — search, pick a duration (15 min – 4 hr, or "until
+  changed"), hit Play. Clears the queue to play *only* that playlist on
+  loop; auto-reverts to the default playlist when the timer runs out (or
+  hit "back to default now" to end it early).
+- **Daily schedule** — pick a time + playlist, hit "Add to schedule". Every
+  day at that time, forever, it switches to that playlist automatically —
+  like a recurring radio programming grid. A one-off "Play" always takes
+  priority over the schedule until its timer expires, then the schedule
+  resumes.
 
 Set up alongside the sync timer:
 
@@ -84,10 +92,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now radio-webapp
 ```
 
-This and `radio-playlist-sync.py` share state (`radio_common.py`, and a
-small JSON file recording the current override + its expiry) — the webpage
-sets what should play, the sync timer enforces it and reverts it on
-schedule. Both need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
+This and `radio-playlist-sync.py` share state via `radio_common.py` (small
+JSON files for the current override and the schedule list) — the webpage
+decides what should play, the sync timer enforces and reverts/switches it
+on schedule. All tracklist-mutating operations go through a file lock
+(`radio_lock()`) so the webapp and the sync timer can never interleave and
+corrupt the queue, even if you click Play multiple times quickly. Both
+services need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
 
 ## How it works
 
@@ -102,9 +113,10 @@ schedule. Both need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
 - **radio-playlist-sync** (timer, every 2 min) — keeps a chosen Navidrome
   playlist's tracks queued and looping, and reconnects Bluetooth if it
   dropped (e.g. after a reboot).
-- **radio-webapp** — a tiny Flask page (port 5050) to search playlists and
-  play one exclusively for a set duration, then auto-revert. Writes an
-  override file that radio-playlist-sync.py reads and enforces.
+- **radio-webapp** — a tiny Flask page (port 5050) to search playlists,
+  play one exclusively for a set duration (auto-reverting after), or pin
+  one to a recurring daily time slot. Writes state files that
+  radio-playlist-sync.py reads and enforces.
 
 ## Known issues
 
@@ -139,6 +151,12 @@ schedule. Both need the same `RADIO_PLAYLIST_ID` set as their default/fallback.
   `radio-playlist-sync.py` now detects this by comparing (track, position)
   against what it saw last run; if unchanged 2 minutes later while
   "playing", it reconnects Bluetooth and restarts playback.
+- **Rapid double-clicking "Play" used to corrupt the queue** — Flask's dev
+  server + two near-simultaneous requests could interleave a `clear()` from
+  one request with an `add()` from another, leaving a mixed tracklist that
+  never actually resumed playback. Fixed with a file lock (`radio_lock()`)
+  that all queue-mutating code (webapp and sync timer alike) now holds
+  around clear+add+play sequences.
 
 See [PROJECT.md](PROJECT.md) for the fuller build log, architecture
 rationale, and what's still on the roadmap (an Icecast/DLNA phase for

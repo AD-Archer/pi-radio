@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Keeps Mopidy playing continuously: normally loops a default Navidrome
-playlist, appending newly-added songs automatically - but if radio-webapp.py
-has set a temporary playlist override (see radio_common.py), leaves that
-alone until it expires, then reverts to the default playlist.
+"""Keeps Mopidy playing continuously, in priority order:
+
+1. A one-off "play X for N minutes" override set via radio-webapp.py, if
+   still active - left completely alone until it expires.
+2. A recurring daily schedule entry (also set via radio-webapp.py) whose
+   time-of-day has arrived - switched to automatically, every day, forever.
+3. Otherwise, the default playlist (RADIO_PLAYLIST_ID) looped forever,
+   with newly-added Navidrome tracks appended in automatically.
 
 Runs periodically (see radio-playlist-sync.timer).
 
@@ -35,13 +39,19 @@ from radio_common import (  # noqa: E402
     clear_override,
     get_subsonic_client,
     load_override,
+    load_schedule_state,
+    load_schedules,
     play_playlist_now,
     playlist_track_uris,
+    radio_lock,
     read_raw_override,
+    resolve_active_schedule,
     rpc,
+    save_schedule_state,
 )
 
 STUCK_STATE_FILE = "/var/lib/mopidy/.radio-sync-last.json"
+UNSET = object()  # sentinel: distinguishes "no schedule state file yet" from "no schedule active"
 
 
 def ensure_bluetooth_connected():
@@ -78,35 +88,37 @@ def recover_stuck_playback():
     time.sleep(2)
     subprocess.run(["bluetoothctl", "connect", BLUETOOTH_MAC], capture_output=True, text=True)
     time.sleep(3)
-    rpc("core.playback.stop")
-    time.sleep(1)
-    rpc("core.playback.play")
+    with radio_lock():
+        rpc("core.playback.stop")
+        time.sleep(1)
+        rpc("core.playback.play")
 
 
 def sync_default_playlist():
     """Steady-state behaviour: append any new tracks from the default
     playlist without disturbing the current queue position."""
-    client = get_subsonic_client()
-    uris = playlist_track_uris(client, DEFAULT_PLAYLIST_ID)
+    with radio_lock():
+        client = get_subsonic_client()
+        uris = playlist_track_uris(client, DEFAULT_PLAYLIST_ID)
 
-    if not uris:
-        print("Default playlist has no songs yet, nothing to queue.")
-    else:
-        current = rpc("core.tracklist.get_tracks") or []
-        current_uris = {t["uri"] for t in current}
-        new_uris = [u for u in uris if u not in current_uris]
-        if new_uris:
-            rpc("core.tracklist.add", {"uris": new_uris})
-            print(f"Added {len(new_uris)} new track(s) from default playlist.")
+        if not uris:
+            print("Default playlist has no songs yet, nothing to queue.")
         else:
-            print("No new tracks.")
+            current = rpc("core.tracklist.get_tracks") or []
+            current_uris = {t["uri"] for t in current}
+            new_uris = [u for u in uris if u not in current_uris]
+            if new_uris:
+                rpc("core.tracklist.add", {"uris": new_uris})
+                print(f"Added {len(new_uris)} new track(s) from default playlist.")
+            else:
+                print("No new tracks.")
 
-    rpc("core.tracklist.set_repeat", {"value": True})
-    rpc("core.tracklist.set_consume", {"value": False})
+        rpc("core.tracklist.set_repeat", {"value": True})
+        rpc("core.tracklist.set_consume", {"value": False})
 
-    if uris and rpc("core.playback.get_state") != "playing":
-        rpc("core.playback.play")
-        print("Playback was stopped, started it.")
+        if uris and rpc("core.playback.get_state") != "playing":
+            rpc("core.playback.play")
+            print("Playback was stopped, started it.")
 
 
 def main():
@@ -127,16 +139,40 @@ def main():
 
     override = load_override()
     if override is not None:
-        print(f"Override active ({override['name']!r}), leaving queue alone.")
+        print(f"Manual override active ({override['name']!r}).")
+        if state != "playing":
+            with radio_lock():
+                rpc("core.playback.play")
+            print("Playback wasn't playing, started it.")
         return
 
-    raw = read_raw_override()
-    if raw is not None:
-        # An override was set and has now expired - switch back explicitly
-        # rather than waiting for the old queue to loop around forever.
-        print(f"Override {raw['name']!r} expired, reverting to default playlist.")
+    if read_raw_override() is not None:
+        print("A manual override just expired, clearing it.")
         clear_override()
-        play_playlist_now(DEFAULT_PLAYLIST_ID)
+
+    schedules = load_schedules()
+    active = resolve_active_schedule(schedules)
+    active_id = active["id"] if active else None
+    schedule_state = load_schedule_state()
+    stored_id = schedule_state["active_schedule_id"] if schedule_state is not None else UNSET
+
+    if active_id != stored_id:
+        with radio_lock():
+            if active is not None:
+                print(f"Schedule change: switching to {active['name']!r} ({active['time']}).")
+                play_playlist_now(active["playlist_id"])
+            else:
+                print("Schedule change: no schedule active, switching to default playlist.")
+                play_playlist_now(DEFAULT_PLAYLIST_ID)
+        save_schedule_state(active_id)
+        return
+
+    if active is not None:
+        print(f"Schedule {active['name']!r} still active.")
+        if state != "playing":
+            with radio_lock():
+                rpc("core.playback.play")
+            print("Playback wasn't playing, started it.")
         return
 
     sync_default_playlist()
