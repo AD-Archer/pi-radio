@@ -1,0 +1,8 @@
+# Real Navidrome credentials + your specific Bluetooth MAC live here -
+# config/mopidy.conf.example is the committed template.
+config/mopidy.conf
+
+# OS / editor junk
+.DS_Store
+__pycache__/
+*.pyc

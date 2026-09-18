@@ -1,0 +1,52 @@
+# Mopidy config for the Navidrome radio box.
+# Copy this to config/mopidy.conf and fill in the [subsonic] section with
+# your real Navidrome details - config/mopidy.conf is gitignored so your
+# credentials never get committed.
+#
+#   cp config/mopidy.conf.example config/mopidy.conf
+#
+# Then either `sudo cp config/mopidy.conf /etc/mopidy/mopidy.conf` or let
+# scripts/setup.sh do it for you.
+
+[core]
+cache_dir = /var/lib/mopidy/.cache
+config_dir = /var/lib/mopidy/.config
+data_dir = /var/lib/mopidy/.local/share
+
+[logging]
+verbosity = 0
+
+# --- Navidrome connection --------------------------------------------------
+# NOTE: comments must be on their own line here, not appended after a value -
+# Mopidy's config parser takes everything after "=" literally, comment text
+# included.
+[subsonic]
+enabled = true
+# hostname must be an IP or a name that actually resolves from THIS device
+# (check with: getent hosts <name>) - a bare hostname like "navidrome" only
+# resolves if something (mDNS, Tailscale MagicDNS, /etc/hosts) provides it.
+hostname = CHANGE_ME
+# default Navidrome port; adjust if different
+port = 4533
+username = CHANGE_ME
+password = CHANGE_ME
+# true if Navidrome is behind HTTPS
+ssl = false
+# leave blank unless Navidrome sits behind a URL sub-path/reverse proxy
+context =
+
+# --- Bluetooth audio output -------------------------------------------------
+# MAC address gets filled in by scripts/setup.sh after you pair your FM
+# transmitter dongle. You can also set it manually with:
+#   bluetoothctl devices
+[audio]
+output = alsasink device=bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp
+
+# --- Web UI ------------------------------------------------------------------
+[http]
+enabled = true
+hostname = 0.0.0.0
+port = 6680
+
+[iris]
+enabled = true

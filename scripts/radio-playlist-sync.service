@@ -1,0 +1,12 @@
+[Unit]
+Description=Sync Navidrome "Radio" playlist into Mopidy's looping queue
+After=mopidy.service
+Requires=mopidy.service
+
+[Service]
+Type=oneshot
+# Edit these for your own install: playlist ID is the last path segment of
+# the playlist's URL in Navidrome's web UI; MAC comes from `bluetoothctl devices`.
+Environment=RADIO_PLAYLIST_ID=1OfGteB2iY40tKxcmugen9
+Environment=RADIO_BLUETOOTH_MAC=41:42:BD:42:27:E5
+ExecStart=/usr/bin/python3 /usr/local/bin/radio-playlist-sync.py
