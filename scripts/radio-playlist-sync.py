@@ -55,6 +55,7 @@ from radio_common import (  # noqa: E402
     load_override,
     load_schedule_state,
     load_schedules,
+    play_item_now,
     play_playlist_now,
     playlist_track_uris,
     radio_lock,
@@ -165,13 +166,15 @@ def handle_pause(state, track):
     return True
 
 
-def ensure_playing(playlist_id_if_empty):
+def ensure_playing(kind, item_id_if_empty):
     """If playback isn't running, resume it - but if the tracklist is
     actually empty (e.g. a real Mopidy service restart wiped it, not just
-    a pause), a plain play() is a no-op, so do a full re-queue instead."""
+    a pause), a plain play() is a no-op, so do a full re-queue instead.
+    kind: 'playlist' or 'album' (schedules are playlist-only; overrides can
+    be either)."""
     with radio_lock():
         if rpc("core.tracklist.get_length") == 0:
-            play_playlist_now(playlist_id_if_empty)
+            play_item_now(kind, item_id_if_empty)
         else:
             rpc("core.playback.play")
 
@@ -242,7 +245,7 @@ def main():
         else:
             print(f"Manual override active ({override['name']!r}).")
             if state != "playing":
-                ensure_playing(override["playlist_id"])
+                ensure_playing(override["kind"], override["id"])
                 print("Playback wasn't playing, started/resumed it.")
             return
 
@@ -271,7 +274,7 @@ def main():
     if active is not None:
         print(f"Schedule {active['name']!r} still active.")
         if state != "playing":
-            ensure_playing(active["playlist_id"])
+            ensure_playing("playlist", active["playlist_id"])
             print("Playback wasn't playing, started/resumed it.")
         return
 

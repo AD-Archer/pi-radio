@@ -7,10 +7,13 @@ const TITLES = {
   '/': 'Radio',
   '/nowplaying': 'Now Playing',
   '/playlists': 'Playlists',
+  '/albums': 'Albums',
   '/songs': 'Songs',
   '/favorites': 'Favorites',
   '/schedule': 'Schedule',
   '/rotation': 'Rotation',
+  '/users': 'People',
+  '/activity': 'Activity',
 }
 
 export default function Layout() {

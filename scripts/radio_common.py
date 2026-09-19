@@ -95,16 +95,32 @@ def playlist_track_uris(client, playlist_id):
     return [f"subsonic://{e['id']}" for e in entries]
 
 
-def play_playlist_now(playlist_id, repeat=True):
-    """Clear the queue, load only this playlist's tracks, and play.
-    repeat=True loops this exact playlist forever (used for schedules and
-    manual "play X" overrides - a deliberate pick that should keep playing).
-    repeat=False plays it through once and stops at the end (used for the
-    random default rotation, so the sync loop can notice it finished and
-    switch to a different random playlist).
-    Caller is responsible for holding radio_lock() around this."""
+def album_track_uris(client, album_id):
+    data = client.api.getAlbum(id=album_id)
+    songs = data.get("album", {}).get("song", [])
+    if isinstance(songs, dict):
+        songs = [songs]
+    return [f"subsonic://{s['id']}" for s in songs]
+
+
+def search_albums(query, limit=25):
     client = get_subsonic_client()
-    uris = playlist_track_uris(client, playlist_id)
+    data = client.api.search3(query, artistCount=0, albumCount=limit, songCount=0)
+    albums = data.get("searchResult3", {}).get("album", [])
+    if isinstance(albums, dict):
+        albums = [albums]
+    return albums
+
+
+def resolve_uris(kind, item_id):
+    """kind: 'playlist' or 'album'."""
+    client = get_subsonic_client()
+    if kind == "album":
+        return album_track_uris(client, item_id)
+    return playlist_track_uris(client, item_id)
+
+
+def _play_uris_now(uris, repeat=True):
     rpc("core.tracklist.clear")
     if uris:
         rpc("core.tracklist.add", {"uris": uris})
@@ -113,6 +129,39 @@ def play_playlist_now(playlist_id, repeat=True):
     if uris:
         rpc("core.playback.play")
     return len(uris)
+
+
+def _queue_uris_next(uris):
+    if not uris:
+        return 0
+    index = rpc("core.tracklist.index")
+    at_position = (index + 1) if index is not None else 0
+    rpc("core.tracklist.add", {"uris": uris, "at_position": at_position})
+    return len(uris)
+
+
+def play_item_now(kind, item_id, repeat=True):
+    """Clear the queue, load only this playlist's/album's tracks, and play.
+    repeat=True loops it forever (used for schedules and manual "play X"
+    overrides - a deliberate pick that should keep playing). repeat=False
+    plays it through once and stops at the end (used for the random
+    default rotation, so the sync loop can notice it finished and switch
+    to a different random playlist - albums are never used for that, only
+    playlists, so repeat=False is only ever passed with kind="playlist").
+    Caller is responsible for holding radio_lock() around this."""
+    return _play_uris_now(resolve_uris(kind, item_id), repeat=repeat)
+
+
+def queue_item_next(kind, item_id):
+    """Insert this playlist's/album's tracks right after whatever's
+    currently playing, WITHOUT clearing or jumping - they just play in
+    order once playback reaches them. Doesn't touch override/schedule/
+    default state at all."""
+    return _queue_uris_next(resolve_uris(kind, item_id))
+
+
+def play_playlist_now(playlist_id, repeat=True):
+    return play_item_now("playlist", playlist_id, repeat=repeat)
 
 
 def _atomic_write_json(path, data):
@@ -149,15 +198,15 @@ def load_override():
     return state
 
 
-def save_override(playlist_id, name, minutes, once=False):
-    """once=True: play the playlist through one time (no looping) and end
-    the override as soon as it naturally finishes - the default, since
-    looping for a fixed duration can otherwise cut a track off mid-song
-    the moment the timer hits. minutes (loop for N minutes) and "until
-    changed" (minutes=None, loop forever) remain available as explicit
-    choices when you actually want a timed/indefinite loop."""
+def save_override(kind, item_id, name, minutes, once=False):
+    """kind: 'playlist' or 'album'. once=True: play through one time (no
+    looping) and end the override as soon as it naturally finishes - the
+    default, since looping for a fixed duration can otherwise cut a track
+    off mid-song the moment the timer hits. minutes (loop for N minutes)
+    and "until changed" (minutes=None, loop forever) remain available as
+    explicit choices when you actually want a timed/indefinite loop."""
     expires_at = time.time() + minutes * 60 if minutes else None
-    state = {"playlist_id": playlist_id, "name": name, "expires_at": expires_at, "once": once}
+    state = {"kind": kind, "id": item_id, "name": name, "expires_at": expires_at, "once": once}
     _atomic_write_json(OVERRIDE_STATE_FILE, state)
     return state
 
@@ -363,19 +412,7 @@ def get_favorite_tracks(limit=200):
 
 
 def queue_playlist_next(playlist_id):
-    """Insert this playlist's tracks right after whatever's currently
-    playing, WITHOUT clearing or jumping - they just play in order once
-    playback reaches them, and whatever was already queued after the
-    current track (if anything) still follows after them. Doesn't touch
-    override/schedule/default state at all."""
-    client = get_subsonic_client()
-    uris = playlist_track_uris(client, playlist_id)
-    if not uris:
-        return 0
-    index = rpc("core.tracklist.index")
-    at_position = (index + 1) if index is not None else 0
-    rpc("core.tracklist.add", {"uris": uris, "at_position": at_position})
-    return len(uris)
+    return queue_item_next("playlist", playlist_id)
 
 
 def _current_tlid():

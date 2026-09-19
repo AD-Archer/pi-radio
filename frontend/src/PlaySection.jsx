@@ -2,16 +2,7 @@ import { useState } from 'react'
 import { api } from './api'
 import { useSearch } from './useSearch'
 import { useToast } from './ToastContext'
-
-const DURATIONS = [
-  { value: 'once', label: 'until it finishes' },
-  { value: '15', label: 'loop for 15 min' },
-  { value: '30', label: 'loop for 30 min' },
-  { value: '60', label: 'loop for 1 hour' },
-  { value: '120', label: 'loop for 2 hours' },
-  { value: '240', label: 'loop for 4 hours' },
-  { value: 'forever', label: 'loop until changed' },
-]
+import { DURATIONS, parseDuration } from './durations'
 
 export default function PlaySection() {
   const { query, setQuery, results, error } = useSearch((q) => api.playlists(q), { debounceMs: 250 })
@@ -22,9 +13,7 @@ export default function PlaySection() {
   async function play(p) {
     setBusy(`${p.id}:play`)
     try {
-      const once = duration === 'once'
-      const minutes = once || duration === 'forever' ? null : parseInt(duration, 10)
-      const r = await api.playPlaylist(p.id, p.name, { once, minutes })
+      const r = await api.playPlaylist(p.id, p.name, parseDuration(duration))
       toast(`Playing "${p.name}" · ${r.queued} tracks`)
     } catch (e) {
       toast(`Couldn't play: ${e.message}`, 'error')

@@ -12,6 +12,18 @@ const json = (body) => ({
 })
 
 export const api = {
+  me: () => request('/api/auth/me'),
+  login: (username, password) => request('/api/auth/login', json({ username, password })),
+  logout: () => request('/api/auth/logout', { method: 'POST' }),
+
+  users: () => request('/api/admin/users'),
+  createUser: (username, password, role) => request('/api/admin/users', json({ username, password, role })),
+  setUserRole: (id, role) => request(`/api/admin/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) }),
+  deleteUser: (id) => request(`/api/admin/users/${id}`, { method: 'DELETE' }),
+  generateToken: (id) => request(`/api/admin/users/${id}/token`, { method: 'POST' }),
+  revokeToken: (id) => request(`/api/admin/users/${id}/token`, { method: 'DELETE' }),
+  auditLog: () => request('/api/admin/audit-log'),
+
   status: () => request('/api/status'),
   queue: () => request('/api/queue'),
   skip: () => request('/api/skip', { method: 'POST' }),
@@ -34,6 +46,11 @@ export const api = {
   queuePlaylistNext: (playlistId) =>
     request('/api/queue-playlist-next', json({ playlist_id: playlistId })),
   cancelOverride: () => request('/api/cancel', { method: 'POST' }),
+
+  albums: (q) => request(`/api/albums?q=${encodeURIComponent(q)}`),
+  playAlbum: (albumId, name, { once, minutes } = {}) =>
+    request('/api/play-album', json({ album_id: albumId, name, once, minutes })),
+  queueAlbumNext: (albumId) => request('/api/queue-album-next', json({ album_id: albumId })),
 
   songs: (q) => request(`/api/songs?q=${encodeURIComponent(q)}`),
   playSongNow: (uri) => request('/api/play-song', json({ uri })),

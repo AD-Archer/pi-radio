@@ -15,9 +15,10 @@ Navidrome and the Bluetooth dongle on its own, and keeps *something* playing
 forever. By default that's a rotation through random Navidrome playlists —
 plays one all the way through (picking up newly-added songs automatically),
 then a *different* random one, and so on — layer on top of that: a daily
-recurring schedule, one-off timed overrides, playing a single song next
-without disturbing the rotation, and excluding specific playlists from it.
-All from a web page on your LAN.
+recurring schedule, one-off timed overrides, searching and playing/queueing
+individual playlists, albums, or songs, and excluding specific playlists
+from rotation. It's an installable PWA ("Radio") with accounts, roles, and
+an audit log, all from a web page on your LAN.
 
 ## Hardware
 
@@ -74,17 +75,22 @@ Navidrome's web UI) and `RADIO_BLUETOOTH_MAC` (from `bluetoothctl devices`
 after pairing). This same script also reconnects Bluetooth automatically
 after a power cycle — see "Known issues" below for why that's necessary.
 
-### Picking playlists/songs yourself, scheduling, and exclusions
+### The web app: picking things yourself, scheduling, and accounts
 
 `http://<pi-ip>:5050` is a second web page — a real React app (`frontend/`),
-served by the same Flask backend as static files. It's styled after a
-classic click-wheel iPod: a menu list on the home screen, one screen deep
-per feature, a "‹ Menu" back button, and a live status dot in the title
-bar. Each screen is a real route (`/playlists`, `/schedule`, ...) via
-React Router, so the browser's back/forward buttons and direct links work
-normally — the Flask backend serves `index.html` for any unrecognized path
-so refreshing on a deep link doesn't 404. A previous/pause-or-play/skip
-transport bar stays fixed at the bottom; only the middle content scrolls.
+served by the same Flask backend as static files, and installable as a PWA
+named "Radio" (an "Add to Home Screen"/install prompt shows up in the
+browser — it has a manifest, icons, and a service worker via
+`vite-plugin-pwa`). It's styled after a classic click-wheel iPod: a menu
+list on the home screen, one screen deep per feature, a "‹ Menu" back
+button, and a live status dot in the title bar. Each screen is a real
+route (`/playlists`, `/schedule`, ...) via React Router, so the browser's
+back/forward buttons and direct links work normally — the Flask backend
+serves `index.html` for any unrecognized path so refreshing on a deep link
+doesn't 404. A previous/pause-or-play/skip transport bar stays fixed at
+the bottom; only the middle content scrolls. Logging in is required (see
+"Accounts, roles, and the audit log" below); Schedule/Rotation/People/
+Activity are admin-only and hidden from the menu for regular members.
 
 Menu items:
 
@@ -100,22 +106,26 @@ Menu items:
   jump straight to it, or use the up/down arrows on an upcoming track to
   reorder the queue. The transport bar's previous button steps back
   normally too.
-- **Playlists** — search playlists: **Play now** clears the queue and
-  plays it (through once by default; or pick a duration to loop it, up to
-  "until changed") — auto-reverts to the rotation once it finishes or the
-  timer runs out. **Queue next** inserts the whole playlist right after the
-  current track *without* clearing or disturbing anything else queued.
+- **Playlists** / **Albums** — search playlists or albums: **Play now**
+  clears the queue and plays it (through once by default; or pick a
+  duration to loop it, up to "until changed") — auto-reverts to the
+  rotation once it finishes or the timer runs out. **Queue next** inserts
+  the whole playlist/album right after the current track *without*
+  clearing or disturbing anything else queued.
 - **Songs** — search individual tracks. **Play now** jumps to it
   immediately (interrupting what's playing); **Queue next** inserts it
   after the current track without interrupting anything.
 - **Favorites** — your Navidrome-starred songs, with the same Play
   now/Queue next actions as Songs.
-- **Schedule** — pick a time + playlist, add it. Every day at that time,
-  forever, it switches to that playlist automatically — a recurring
+- **Schedule** (admin) — pick a time + playlist, add it. Every day at that
+  time, forever, it switches to that playlist automatically — a recurring
   programming grid. A one-off "Play now" always takes priority over the
   schedule until it ends, then the schedule resumes.
-- **Rotation** — uncheck a playlist to exclude it from random rotation (it
-  still works for search-and-play or scheduling).
+- **Rotation** (admin) — uncheck a playlist to exclude it from random
+  rotation (it still works for search-and-play or scheduling).
+- **People** (admin) — create accounts, promote/demote admin↔member,
+  remove accounts, issue/revoke a per-user API token.
+- **Activity** (admin) — the audit log: who did what, and when.
 
 Build the frontend and deploy alongside the sync timer:
 
@@ -123,12 +133,16 @@ Build the frontend and deploy alongside the sync timer:
 cd frontend && pnpm install && pnpm build && cd ..
 
 sudo pip3 install --break-system-packages flask
-sudo cp scripts/radio_common.py scripts/radio-webapp.py /usr/local/bin/
+sudo cp scripts/radio_common.py scripts/radio_auth.py scripts/radio-webapp.py scripts/create_user.py /usr/local/bin/
 sudo cp scripts/radio-webapp.service /etc/systemd/system/
 sudo mkdir -p /usr/local/share/radio-frontend
 sudo cp -r frontend/dist /usr/local/share/radio-frontend/dist
 sudo systemctl daemon-reload
 sudo systemctl enable --now radio-webapp
+
+# one-time: create your own admin account (there's no admin yet to do
+# this through the app itself)
+sudo python3 /usr/local/bin/create_user.py <your-username> <your-password> --role admin
 ```
 
 (All of this runs from your dev machine, then gets `scp`'d to the Pi like
@@ -148,12 +162,40 @@ sync timer can never interleave and corrupt the queue, even from rapid
 clicks. Both services need the same `RADIO_PLAYLIST_ID` set as their
 default/fallback.
 
+### Accounts, roles, and the audit log
+
+`radio_auth.py` is a small SQLite-backed user system (`/var/lib/mopidy/radio-users.db`) —
+not a real multi-tenant auth stack, just enough to know who's doing what
+and let one person (you) manage who else gets access:
+
+- **Two roles.** `member` can do anything playback-related: play/queue
+  playlists, albums, songs, favorites, skip/pause/resume/previous. `admin`
+  can additionally manage the daily schedule, rotation exclusions, other
+  user accounts, and view the audit log. There's no per-action permission
+  toggle beyond this — the audit log is the main tool for accountability
+  ("who skipped my song at 2am") rather than locking down every button.
+- **Login is required for everything** except the login endpoint itself
+  and the static frontend shell (so the "log in" screen can load at all).
+- **Every mutating request is logged automatically** — `radio_auth.login_required`
+  writes an audit-log row (who, what endpoint, when, and the request body)
+  after any successful POST/PUT/DELETE, so there was no need to hand-instrument
+  two dozen existing route bodies individually.
+- **Bootstrapping**: since there's no admin yet to create the first account
+  through the app, `scripts/create_user.py` creates one directly against
+  the database over SSH (see the deploy command above). Run it again
+  anytime to add more people without needing the web UI.
+- Manage everyone else from the **People** screen once you're an admin
+  yourself: create accounts, promote/demote, remove, or issue a personal
+  API token (shown once, for the cross-site use case below).
+
 ### Using the API from somewhere else
 
 The backend sends permissive CORS headers (`Access-Control-Allow-Origin: *`)
-specifically so another page or tool on your LAN can call it directly —
-there's no auth, by design, since it only controls a personal music box.
-The transport endpoints are the simplest entry point:
+so another page or tool on your LAN can call it directly — but since
+accounts were added, every call still needs to authenticate as *someone*.
+A session cookie only works for the browser tab that logged in, so for a
+separate site/tool, issue yourself a personal API token from the **People**
+screen and send it as a bearer header instead:
 
 ```
 POST /api/pause
@@ -162,8 +204,13 @@ POST /api/skip
 GET  /api/status   # current track, playback_state, what mode it's in
 ```
 
-The rest of `scripts/radio-webapp.py` (playlists, songs, favorites,
-schedule, exclusions, queue) is fair game too — it's just JSON over HTTP.
+```bash
+curl -H "Authorization: Bearer <your-token>" http://<pi-ip>:5050/api/status
+```
+
+The rest of `scripts/radio-webapp.py` (playlists, albums, songs, favorites,
+queue, and schedule/exclusions/admin routes if your token belongs to an
+admin) is fair game too — it's just JSON over HTTP.
 
 A deliberate pause is left alone (it won't get resumed within the next
 sync tick like a genuine stop/crash would) — but if it's left paused for
@@ -185,15 +232,24 @@ rather than sitting silent all day.
   tracks queued and looping, and reconnects Bluetooth if it dropped (e.g.
   after a reboot).
 - **radio-webapp + frontend/** — a Flask JSON API (port 5050) serving a
-  React app (styled after a click-wheel iPod menu): search playlists,
-  songs, or favorites; play one now (once through, or looped for a
-  duration) or queue it next without disturbing anything else; pin a
-  playlist to a recurring daily time slot; exclude playlists from random
-  rotation; see the live cue sheet and skip/remove tracks. Writes state
-  files that radio-playlist-sync.py reads and enforces.
+  React app (styled after a click-wheel iPod menu, installable as a PWA):
+  search playlists, albums, songs, or favorites; play one now (once
+  through, or looped for a duration) or queue it next without disturbing
+  anything else; pin a playlist to a recurring daily time slot; exclude
+  playlists from random rotation; see the live cue sheet and skip/remove/
+  reorder tracks. Writes state files that radio-playlist-sync.py reads and
+  enforces.
+- **radio_auth.py** — SQLite-backed accounts (admin/member roles), session
+  and bearer-token login, and the audit log. `login_required`/`admin_required`
+  gate every route and log mutating requests automatically.
 
 ## Known issues
 
+- **Accounts run over plain HTTP, not HTTPS** — this is a LAN appliance
+  with no TLS anywhere (Mopidy, Flask, none of it), so login credentials
+  and API tokens travel in plaintext on your local network. Fine for a
+  trusted home network; don't reuse a password you care about, and don't
+  expose port 5050 to the internet as-is.
 - **Up to 2 minutes of silence after a playlist finished** — the sync
   timer only ran every 2 minutes, so rotating to a new playlist (or
   reconnecting Bluetooth, or catching stuck playback) waited on that same
@@ -315,6 +371,8 @@ scripts/
   radio-playlist-sync.timer       runs it every 15 seconds
   radio-webapp.py                 JSON API backend + static file server (port 5050)
   radio-webapp.service            systemd unit for the above
+  radio_auth.py                   accounts, sessions/tokens, audit log (SQLite)
+  create_user.py                  CLI to bootstrap/add a user account
 frontend/                         React app (Vite) - the actual web UI
   src/                            components, API client, styles
   dist/                           `pnpm build` output (gitignored, deployed separately)
