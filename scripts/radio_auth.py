@@ -99,6 +99,11 @@ def get_user_by_username(username):
     return _row_to_user(row)
 
 
+def count_users():
+    with _connect() as conn:
+        return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
 def list_users():
     with _connect() as conn:
         rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY created_at").fetchall()

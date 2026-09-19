@@ -13,6 +13,8 @@ const json = (body) => ({
 
 export const api = {
   me: () => request('/api/auth/me'),
+  setupStatus: () => request('/api/auth/setup-status'),
+  setupAdmin: (username, password) => request('/api/auth/setup', json({ username, password })),
   login: (username, password) => request('/api/auth/login', json({ username, password })),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
 

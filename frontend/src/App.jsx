@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './AuthContext'
 import { ToastProvider } from './ToastContext'
 import { StatusProvider } from './StatusContext'
 import Login from './Login'
+import Setup from './Setup'
 import Layout from './Layout'
 import MainMenu from './MainMenu'
 import NowPlayingScreen from './NowPlayingScreen'
@@ -17,9 +18,10 @@ import Activity from './Activity'
 import './panels.css'
 
 function AuthedApp() {
-  const { user, loading } = useAuth()
+  const { user, loading, setupNeeded } = useAuth()
 
   if (loading) return null
+  if (setupNeeded) return <Setup />
   if (!user) return <Login />
 
   return (

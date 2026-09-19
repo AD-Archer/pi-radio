@@ -66,6 +66,7 @@ from radio_auth import (  # noqa: E402
     admin_required,
     count_admins,
     create_user,
+    count_users,
     delete_user,
     generate_token,
     get_or_create_token,
@@ -121,6 +122,32 @@ def add_cors_headers(response):
 
 
 # --- Auth ----------------------------------------------------------------
+
+@app.route("/api/auth/setup-status")
+def api_auth_setup_status():
+    return jsonify({"needed": count_users() == 0})
+
+
+@app.route("/api/auth/setup", methods=["POST"])
+def api_auth_setup():
+    # Bootstraps the very first admin account from the web UI so nobody
+    # has to SSH in and run create_user.py by hand. Only works while the
+    # user table is completely empty - once any account exists (even a
+    # non-admin one made via the CLI), this closes and create_user.py is
+    # the only way in, so a stranger on the LAN can't use it to mint
+    # themselves an admin account later.
+    if count_users() != 0:
+        return jsonify({"error": "Setup already completed"}), 403
+    body = request.get_json(force=True)
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    create_user(username, password, role="admin")
+    user = verify_user(username, password)
+    session["username"] = user["username"]
+    return jsonify(user)
+
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
