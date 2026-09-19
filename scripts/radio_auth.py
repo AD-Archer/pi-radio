@@ -130,6 +130,14 @@ def generate_token(user_id):
     return token
 
 
+def get_or_create_token(user_id):
+    with _connect() as conn:
+        row = conn.execute("SELECT api_token FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row and row["api_token"]:
+            return row["api_token"]
+    return generate_token(user_id)
+
+
 def revoke_token(user_id):
     with _connect() as conn:
         conn.execute("UPDATE users SET api_token = NULL WHERE id = ?", (user_id,))

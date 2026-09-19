@@ -68,6 +68,7 @@ from radio_auth import (  # noqa: E402
     create_user,
     delete_user,
     generate_token,
+    get_or_create_token,
     get_user_by_username,
     init_db,
     list_audit_log,
@@ -129,6 +130,21 @@ def api_login():
         return jsonify({"error": "Wrong username or password"}), 401
     session["username"] = user["username"]
     return jsonify(user)
+
+
+@app.route("/api/auth/token", methods=["POST"])
+def api_auth_token():
+    # Trades username+password for the user's bearer token, so an MCP
+    # server or other headless app can authenticate once with a password
+    # and store the token instead of juggling session cookies. Reuses an
+    # existing token rather than rotating it, so this can be called
+    # repeatedly (e.g. re-run setup) without breaking other callers that
+    # already have that token.
+    body = request.get_json(force=True)
+    user = verify_user(body.get("username", ""), body.get("password", ""))
+    if user is None:
+        return jsonify({"error": "Wrong username or password"}), 401
+    return jsonify({"token": get_or_create_token(user["id"]), "user": user})
 
 
 @app.route("/api/auth/logout", methods=["POST"])
